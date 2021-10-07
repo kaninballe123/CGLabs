@@ -1,0 +1,3875 @@
+#pragma once
+
+/*
+*	0: Debugging disabled (maximum performance)
+*	1: Minimal error reporting. Constatly checks glGetError().
+*	2: Creates GL debug context, but only logs medium and severe problems.
+*	3: Creates GL debug context and enables all GL debugging features.
+*/
+#define DEBUG_LEVEL 3
+
+/*
+*	Enables (1) or disables (0) assertions using the Assert()-call (found in Log.h)
+*	Turn off for maximum performance.
+*/
+#define ENABLE_ASSERT					1
+
+/*
+*	Enables (1) or disables (0) input parameter checks using the Param()-call (found in Log.h)
+*	Turn off for maximum performance.
+*/
+#define ENABLE_PARAM_CHECK				1
+
+/*
+*	Enables (1) or disables (0) CPU profiling (found in Profiler.h)
+*	Turn off for maximum performance.
+*/
+#define ENABLE_PROFILING				1
+
+/*
+*	Enables (1) or disables (0) GL render state inspection (found in GLStateInspection.h)
+*	Turn off for maximum performance.
+*/
+#define ENABLE_GL_STATE_INSPECTION		1
+
+add_library (bonobo)
+target_sources (
+	bonobo
+	PUBLIC
+		[[Bonobo.h]]
+		[[BuildSettings.h]]
+		"${CMAKE_BINARY_DIR}/config.hpp"
+		[[FPSCamera.h]]
+		[[FPSCamera.inl]]
+		[[helpers.hpp]]
+		[[InputHandler.h]]
+		[[Log.h]]
+		[[LogView.h]]
+		[[node.hpp]]
+		[[opengl.hpp]]
+		[[ShaderProgramManager.hpp]]
+		[[TRSTransform.h]]
+		[[TRSTransform.inl]]
+		[[various.hpp]]
+		[[WindowManager.hpp]]
+	PRIVATE
+		[[Bonobo.cpp]]
+		[[helpers.cpp]]
+		[[InputHandler.cpp]]
+		[[Log.cpp]]
+		[[LogView.cpp]]
+		[[node.cpp]]
+		[[opengl.cpp]]
+		[[ShaderProgramManager.cpp]]
+		[[various.cpp]]
+		[[WindowManager.cpp]]
+)
+
+target_include_directories (
+	bonobo
+	PUBLIC
+		"${CMAKE_SOURCE_DIR}/src"
+		"${CMAKE_BINARY_DIR}"
+		"${ASSIMP_INCLUDE_DIRS}"
+)
+
+target_link_libraries (
+	bonobo
+	PUBLIC
+		${ASSIMP_LIBRARIES}
+		external_libs
+		glfw
+		glm
+		$<$<NOT:$<BOOL:${WIN32}>>:dl>
+	PRIVATE
+		CG_Labs_options
+		stb::stb
+)
+
+install (TARGETS bonobo DESTINATION lib)
+
+#pragma once
+
+#include "core/various.hpp"
+
+#include <fstream>
+#include <string>
+
+namespace config
+{
+	constexpr unsigned int msaa_rate = @MSAA_RATE@;
+	constexpr unsigned int resolution_x = @WIDTH@;
+	constexpr unsigned int resolution_y = @HEIGHT@;
+
+	inline std::string shaders_path(std::string const& path)
+	{
+		std::string const tmp_path = std::string("shaders/") + path;
+		std::string const root = std::ifstream(utils::widen(tmp_path)) ? "." : "@ROOT_DIR@";
+		return root + std::string("/") + tmp_path;
+	}
+	inline std::string resources_path(std::string const& path)
+	{
+		std::string const tmp_path = std::string("res/") + path;
+		std::string const root = std::ifstream(utils::widen(tmp_path)) ? "." : "@ROOT_DIR@";
+		return root + std::string("/") + tmp_path;
+	}
+}
+
+#pragma once
+
+#include "TRSTransform.h"
+#include "InputHandler.h"
+
+#include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/io.hpp>
+
+#include <chrono>
+#include <iostream>
+
+template<typename T, glm::precision P>
+class FPSCamera
+{
+public:
+	FPSCamera(T fovy, T aspect, T nnear, T nfar);
+	~FPSCamera();
+
+public:
+	void Update(std::chrono::microseconds deltaTime, InputHandler &ih, bool ignoreKeyEvents = false, bool ignoreMouseEvents = false);
+	void SetProjection(T fovy, T aspect, T nnear, T nfar);
+	void SetFov(T fovy);
+	T GetFov();
+	void SetAspect(T a);
+	T GetAspect();
+
+	glm::tmat4x4<T, P> GetViewToWorldMatrix();
+	glm::tmat4x4<T, P> GetWorldToViewMatrix();
+	glm::tmat4x4<T, P> GetClipToWorldMatrix();
+	glm::tmat4x4<T, P> GetWorldToClipMatrix();
+	glm::tmat4x4<T, P> GetClipToViewMatrix();
+	glm::tmat4x4<T, P> GetViewToClipMatrix();
+
+	glm::tvec3<T, P> GetClipToWorld(glm::tvec3<T, P> xyw);
+	glm::tvec3<T, P> GetClipToView(glm::tvec3<T, P> xyw);
+
+public:
+	TRSTransform<T, P> mWorld;
+	T mMovementSpeed;
+	T mMouseSensitivity;
+
+public:
+	T mFov, mAspect, mNear, mFar;
+	glm::tmat4x4<T, P> mProjection;
+	glm::tmat4x4<T, P> mProjectionInverse;
+	glm::tvec2<T, P> mRotation;
+	glm::tvec2<T, P> mMousePosition;
+
+public:
+	friend std::ostream &operator<<(std::ostream &os, FPSCamera<T, P> &v) {
+		os << v.mFov << " " << v.mAspect << " " << v.mNear << " " << v.mFar << std::endl;
+		os << v.mMovementSpeed << " " << v.mMouseSensitivity << std::endl;
+		os << v.mRotation << std::endl;
+		os << v.mWorld;
+		return os;
+	}
+	friend std::istream &operator>>(std::istream &is, FPSCamera<T, P> &v) {
+		T fov, aspect, nnear, far;
+		is >> fov >> aspect >> nnear >> far;
+		v.SetProjection(fov, aspect, nnear, far);
+		is >> v.mMovementSpeed >> v.mMouseSensitivity;
+		is >> v.mRotation;
+		is >> v.mWorld;
+		return is;
+	}
+};
+
+#include "FPSCamera.inl"
+
+typedef FPSCamera<float, glm::defaultp> FPSCameraf;
+typedef FPSCamera<double, glm::defaultp> FPSCamerad;
+
+template<typename T, glm::precision P>
+FPSCamera<T, P>::FPSCamera(T fovy, T aspect, T nnear, T nfar) : mWorld(), mMovementSpeed(1), mMouseSensitivity(1), mFov(fovy), mAspect(aspect), mNear(nnear), mFar(nfar), mProjection(), mProjectionInverse(), mRotation(glm::tvec2<T, P>(0.0f)), mMousePosition(glm::tvec2<T, P>(0.0f))
+{
+	SetProjection(fovy, aspect, nnear, nfar);
+}
+
+template<typename T, glm::precision P>
+FPSCamera<T, P>::~FPSCamera()
+{
+}
+
+template<typename T, glm::precision P>
+void FPSCamera<T, P>::SetProjection(T fovy, T aspect, T nnear, T nfar)
+{
+	mFov = fovy;
+	mAspect = aspect;
+	mNear = nnear;
+	mFar = nfar;
+	mProjection = glm::perspective(fovy, aspect, nnear, nfar);
+	mProjectionInverse = glm::inverse(mProjection);
+}
+
+template<typename T, glm::precision P>
+void FPSCamera<T, P>::SetFov(T fovy)
+{
+	SetProjection(fovy, mAspect, mNear, mFar);
+}
+
+template<typename T, glm::precision P>
+T FPSCamera<T, P>::GetFov()
+{
+	return mFov;
+}
+
+template<typename T, glm::precision P>
+void FPSCamera<T, P>::SetAspect(T a)
+{
+	SetProjection(mFov, a, mNear, mFar);
+}
+
+template<typename T, glm::precision P>
+T FPSCamera<T, P>::GetAspect()
+{
+	return mAspect;
+}
+
+
+template<typename T, glm::precision P>
+void FPSCamera<T, P>::Update(std::chrono::microseconds deltaTime, InputHandler &ih, bool ignoreKeyEvents, bool ignoreMouseEvents)
+{
+	glm::tvec2<T, P> newMousePosition = glm::tvec2<T, P>(ih.GetMousePosition().x, ih.GetMousePosition().y);
+	glm::tvec2<T, P> mouse_diff = newMousePosition - mMousePosition;
+	mouse_diff.y = -mouse_diff.y;
+	mMousePosition = newMousePosition;
+	mouse_diff *= mMouseSensitivity;
+
+	if (!ih.IsMouseCapturedByUI() && !ignoreMouseEvents && (ih.GetMouseState(GLFW_MOUSE_BUTTON_LEFT) & PRESSED)) {
+		mRotation.x -= mouse_diff.x;
+		mRotation.y += mouse_diff.y;
+		mWorld.SetRotateX(mRotation.y);
+		mWorld.RotateY(mRotation.x);
+	}
+
+	T movementModifier = ((ih.GetKeycodeState(GLFW_KEY_LEFT_SHIFT) & PRESSED)) ? 0.25f : ((ih.GetKeycodeState(GLFW_KEY_LEFT_CONTROL) & PRESSED)) ? 4.0f : 1.0f;
+	auto const deltaTime_s = std::chrono::duration<T>(deltaTime);
+	T movement = movementModifier * deltaTime_s.count() * mMovementSpeed;
+
+	T move = 0.0f, strafe = 0.0f, levitate = 0.0f;
+	if (!ih.IsKeyboardCapturedByUI() && !ignoreKeyEvents) {
+		if ((ih.GetKeycodeState(GLFW_KEY_W) & PRESSED)) move += movement;
+		if ((ih.GetKeycodeState(GLFW_KEY_S) & PRESSED)) move -= movement;
+		if ((ih.GetKeycodeState(GLFW_KEY_A) & PRESSED)) strafe -= movement;
+		if ((ih.GetKeycodeState(GLFW_KEY_D) & PRESSED)) strafe += movement;
+		if ((ih.GetKeycodeState(GLFW_KEY_Q) & PRESSED)) levitate -= movement;
+		if ((ih.GetKeycodeState(GLFW_KEY_E) & PRESSED)) levitate += movement;
+	}
+
+	mWorld.Translate(mWorld.GetFront() * move);
+	mWorld.Translate(mWorld.GetRight() * strafe);
+	mWorld.Translate(mWorld.GetUp() * levitate);
+}
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> FPSCamera<T, P>::GetViewToWorldMatrix()
+{
+	return mWorld.GetMatrix();
+}
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> FPSCamera<T, P>::GetWorldToViewMatrix()
+{
+	return mWorld.GetMatrixInverse();
+}
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> FPSCamera<T, P>::GetClipToWorldMatrix()
+{
+	return GetViewToWorldMatrix() * mProjectionInverse;
+}
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> FPSCamera<T, P>::GetWorldToClipMatrix()
+{
+	return mProjection * GetWorldToViewMatrix();
+}
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> FPSCamera<T, P>::GetClipToViewMatrix()
+{
+	return mProjectionInverse;
+}
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> FPSCamera<T, P>::GetViewToClipMatrix()
+{
+	return mProjection;
+}
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> FPSCamera<T, P>::GetClipToWorld(glm::tvec3<T, P> xyw)
+{
+	glm::tvec4<T, P> vv = glm::tvec4<T, P>(GetClipToView(xyw), static_cast<T>(1));
+	glm::tvec3<T, P> wv = mWorld.GetMatrix() * vv;
+	return wv;
+}
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> FPSCamera<T, P>::GetClipToView(glm::tvec3<T, P> xyw)
+{
+	return xyw * glm::tvec3<T, P>(mProjectionInverse[0][0], mProjectionInverse[1][1], static_cast<T>(-1));
+}
+
+#include "config.hpp"
+#include "helpers.hpp"
+
+#include "core/Log.h"
+#include "core/opengl.hpp"
+#include "core/various.hpp"
+
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <glm/gtc/type_ptr.hpp>
+#include <imgui.h>
+#include <stb_image.h>
+
+#include <array>
+#include <cassert>
+#include <cstdint>
+
+namespace
+{
+	struct {
+		GLuint shader;
+		GLuint vao;
+		GLuint vbo;
+		GLuint ibo;
+		GLsizei index_count;
+		struct {
+			GLuint world;
+			GLuint view_proj;
+			GLuint thickness_scale;
+			GLuint length_scale;
+		} shader_locations;
+	} basis;
+
+	void setupBasisData();
+}
+
+namespace local
+{
+	static GLuint fullscreen_shader;
+	static GLuint display_vao;
+	static std::array<char const*, 3> const cull_mode_labels{
+		"Disabled",
+		"Back faces",
+		"Front faces"
+	};
+	static std::array<char const*, 3> const polygon_mode_labels{
+		"Fill",
+		"Line",
+		"Point"
+	};
+}
+
+void
+bonobo::init()
+{
+	setupBasisData();
+
+	glGenVertexArrays(1, &local::display_vao);
+	assert(local::display_vao != 0u);
+	local::fullscreen_shader = bonobo::createProgram("common/fullscreen.vert", "common/fullscreen.frag");
+	if (local::fullscreen_shader == 0u)
+		LogError("Failed to load \"fullscreen.vert\" and \"fullscreen.frag\"");
+}
+
+void
+bonobo::deinit()
+{
+	glDeleteProgram(basis.shader);
+	glDeleteBuffers(1, &basis.ibo);
+	glDeleteBuffers(1, &basis.vbo);
+	glDeleteVertexArrays(1, &basis.vao);
+
+	glDeleteProgram(local::fullscreen_shader);
+	glDeleteVertexArrays(1, &local::display_vao);
+}
+
+static std::vector<std::uint8_t>
+getTextureData(std::string const& filename, std::uint32_t& width, std::uint32_t& height, bool flip)
+{
+	auto const channels_nb = 4u;
+	stbi_set_flip_vertically_on_load_thread(flip ? 1 : 0);
+	unsigned char* image_data = stbi_load(filename.c_str(), reinterpret_cast<int*>(&width), reinterpret_cast<int*>(&height), nullptr, channels_nb);
+	if (image_data == nullptr) {
+		LogWarning("Couldn't load or decode image file %s", filename.c_str());
+
+		// Provide a small empty image instead in case of failure.
+		width = 16;
+		height = 16;
+		return std::vector<unsigned char>(width * height * channels_nb);
+	}
+
+	std::vector<unsigned char> image(width * height * channels_nb);
+	std::memcpy(image.data(), image_data, image.size());
+	stbi_image_free(image_data);
+
+	return image;
+}
+
+std::vector<bonobo::mesh_data>
+bonobo::loadObjects(std::string const& filename)
+{
+	auto const scene_start_time = std::chrono::high_resolution_clock::now();
+
+	std::vector<bonobo::mesh_data> objects;
+
+	auto const end_of_basedir = filename.rfind("/");
+	auto const parent_folder = (end_of_basedir != std::string::npos ? filename.substr(0, end_of_basedir) : ".") + "/";
+	Assimp::Importer importer;
+	auto const assimp_scene = importer.ReadFile(filename, aiProcess_Triangulate | aiProcess_SortByPType | aiProcess_CalcTangentSpace);
+	if (assimp_scene == nullptr || assimp_scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || assimp_scene->mRootNode == nullptr) {
+		LogError("Assimp failed to load \"%s\": %s", filename.c_str(), importer.GetErrorString());
+		return objects;
+	}
+
+	if (assimp_scene->mNumMeshes == 0u) {
+		LogError("No mesh available; loading \"%s\" must have had issues", filename.c_str());
+		return objects;
+	}
+
+	LogInfo("┭ Loading \"%s\"…", filename.c_str());
+
+	std::vector<bool> are_materials_used(assimp_scene->mNumMaterials, false);
+	for (size_t j = 0; j < assimp_scene->mNumMeshes; ++j) {
+		auto const assimp_object_mesh = assimp_scene->mMeshes[j];
+		auto const material_id = assimp_object_mesh->mMaterialIndex;
+		if (material_id >= assimp_scene->mNumMaterials)
+			LogError("Mesh \"%s\" has a material index of %u, but only %u materials are present.", assimp_object_mesh->mName.C_Str(), material_id, assimp_scene->mNumMaterials);
+		else
+			are_materials_used[material_id] = true;
+	}
+
+	auto const materials_start_time = std::chrono::high_resolution_clock::now();
+	std::vector<texture_bindings> materials_bindings(assimp_scene->mNumMaterials);
+	uint32_t texture_count = 0u;
+	for (size_t i = 0; i < assimp_scene->mNumMaterials; ++i) {
+		if (!are_materials_used[i])
+			continue;
+
+		auto const material_start_time = std::chrono::high_resolution_clock::now();
+		texture_bindings& bindings = materials_bindings[i];
+		auto const material = assimp_scene->mMaterials[i];
+
+		auto const process_texture = [&bindings,&material,i,&parent_folder,&texture_count](aiTextureType type, std::string const& type_as_str, std::string const& name){
+			if (material->GetTextureCount(type)) {
+				auto const texture_start_time = std::chrono::high_resolution_clock::now();
+
+				if (material->GetTextureCount(type) > 1)
+					LogWarning("Material \"%s\" has more than one %s texture: discarding all but the first one.", material->GetName().C_Str(), type_as_str.c_str());
+				aiString path;
+				material->GetTexture(type, 0, &path);
+				auto const id = bonobo::loadTexture2D(parent_folder + std::string(path.C_Str()), type_as_str != "opacity");
+				if (id == 0u) {
+					LogWarning("Failed to load the %s texture for material \"%s\".", type_as_str.c_str(), material->GetName().C_Str());
+					return;
+				}
+				bindings.emplace(name, id);
+				++texture_count;
+
+				auto const texture_end_time = std::chrono::high_resolution_clock::now();
+				LogTrivia("│ %s Texture \"%s\" loaded in %.3f ms",
+				          bindings.size() == 1 ? "┌" : "├", path.C_Str(),
+				          std::chrono::duration<float, std::milli>(texture_end_time - texture_start_time).count());
+			}
+		};
+
+		process_texture(aiTextureType_DIFFUSE,  "diffuse",  "diffuse_texture");
+		process_texture(aiTextureType_SPECULAR, "specular", "specular_texture");
+		process_texture(aiTextureType_NORMALS,  "normals",  "normals_texture");
+		process_texture(aiTextureType_OPACITY,  "opacity",  "opacity_texture");
+
+		auto const material_end_time = std::chrono::high_resolution_clock::now();
+		LogTrivia("│ %s Material \"%s\" loaded in %.3f ms",
+		          bindings.empty() ? "╺" : "┕", material->GetName().C_Str(),
+		          std::chrono::duration<float, std::milli>(material_end_time - material_start_time).count());
+	}
+	auto const materials_end_time = std::chrono::high_resolution_clock::now();
+
+	auto const meshes_start_time = std::chrono::high_resolution_clock::now();
+	objects.reserve(assimp_scene->mNumMeshes);
+	for (size_t j = 0; j < assimp_scene->mNumMeshes; ++j) {
+		auto const mesh_start_time = std::chrono::high_resolution_clock::now();
+
+		auto const assimp_object_mesh = assimp_scene->mMeshes[j];
+
+		if (!assimp_object_mesh->HasFaces()) {
+			LogError("Unsupported mesh \"%s\": has no faces", assimp_object_mesh->mName.C_Str());
+			continue;
+		}
+		if ((assimp_object_mesh->mPrimitiveTypes & ~static_cast<uint32_t>(aiPrimitiveType_POINT))    != 0u
+		 && (assimp_object_mesh->mPrimitiveTypes & ~static_cast<uint32_t>(aiPrimitiveType_LINE))     != 0u
+		 && (assimp_object_mesh->mPrimitiveTypes & ~static_cast<uint32_t>(aiPrimitiveType_TRIANGLE)) != 0u) {
+			LogError("Unsupported mesh \"%s\": uses multiple primitive types", assimp_object_mesh->mName.C_Str());
+			continue;
+		}
+		if ((assimp_object_mesh->mPrimitiveTypes & static_cast<uint32_t>(aiPrimitiveType_POLYGON)) == static_cast<uint32_t>(aiPrimitiveType_POLYGON)) {
+			LogError("Unsupported mesh \"%s\": uses polygons", assimp_object_mesh->mName.C_Str());
+			continue;
+		}
+		if (!assimp_object_mesh->HasPositions()) {
+			LogError("Unsupported mesh \"%s\": has no positions", assimp_object_mesh->mName.C_Str());
+			continue;
+		}
+
+		bonobo::mesh_data object;
+		if (assimp_object_mesh->mName.length != 0)
+		{
+			object.name = std::string(assimp_object_mesh->mName.C_Str());
+		}
+
+		glGenVertexArrays(1, &object.vao);
+		assert(object.vao != 0u);
+		glBindVertexArray(object.vao);
+
+		auto const vertices_offset = 0u;
+		auto const vertices_size = static_cast<GLsizeiptr>(assimp_object_mesh->mNumVertices * sizeof(glm::vec3));
+
+		auto const normals_offset = vertices_size;
+		auto const normals_size = assimp_object_mesh->HasNormals() ? vertices_size : 0u;
+
+		auto const texcoords_offset = normals_offset + normals_size;
+		auto const texcoords_size = assimp_object_mesh->HasTextureCoords(0u) ? vertices_size : 0u;
+
+		auto const tangents_offset = texcoords_offset + texcoords_size;
+		auto const tangents_size = assimp_object_mesh->HasTangentsAndBitangents() ? vertices_size : 0u;
+
+		auto const binormals_offset = tangents_offset + tangents_size;
+		auto const binormals_size = assimp_object_mesh->HasTangentsAndBitangents() ? vertices_size : 0u;
+
+		auto const bo_size = static_cast<GLsizeiptr>(vertices_size
+		                                            +normals_size
+		                                            +texcoords_size
+		                                            +tangents_size
+		                                            +binormals_size
+		                                            );
+		glGenBuffers(1, &object.bo);
+		assert(object.bo != 0u);
+		glBindBuffer(GL_ARRAY_BUFFER, object.bo);
+		glBufferData(GL_ARRAY_BUFFER, bo_size, nullptr, GL_STATIC_DRAW);
+
+		glBufferSubData(GL_ARRAY_BUFFER, vertices_offset, vertices_size, static_cast<GLvoid const*>(assimp_object_mesh->mVertices));
+		glEnableVertexAttribArray(static_cast<unsigned int>(bonobo::shader_bindings::vertices));
+		glVertexAttribPointer(static_cast<unsigned int>(bonobo::shader_bindings::vertices), 3, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const*>(0x0));
+
+		if (assimp_object_mesh->HasNormals()) {
+			glBufferSubData(GL_ARRAY_BUFFER, normals_offset, normals_size, static_cast<GLvoid const*>(assimp_object_mesh->mNormals));
+			glEnableVertexAttribArray(static_cast<unsigned int>(bonobo::shader_bindings::normals));
+			glVertexAttribPointer(static_cast<unsigned int>(bonobo::shader_bindings::normals), 3, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const*>(normals_offset));
+		}
+
+		if (assimp_object_mesh->HasTextureCoords(0u)) {
+			glBufferSubData(GL_ARRAY_BUFFER, texcoords_offset, texcoords_size, static_cast<GLvoid const*>(assimp_object_mesh->mTextureCoords[0u]));
+			glEnableVertexAttribArray(static_cast<unsigned int>(bonobo::shader_bindings::texcoords));
+			glVertexAttribPointer(static_cast<unsigned int>(bonobo::shader_bindings::texcoords), 3, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const*>(texcoords_offset));
+		}
+
+		if (assimp_object_mesh->HasTangentsAndBitangents()) {
+			glBufferSubData(GL_ARRAY_BUFFER, tangents_offset, tangents_size, static_cast<GLvoid const*>(assimp_object_mesh->mTangents));
+			glEnableVertexAttribArray(static_cast<unsigned int>(bonobo::shader_bindings::tangents));
+			glVertexAttribPointer(static_cast<unsigned int>(bonobo::shader_bindings::tangents), 3, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const*>(tangents_offset));
+
+			glBufferSubData(GL_ARRAY_BUFFER, binormals_offset, binormals_size, static_cast<GLvoid const*>(assimp_object_mesh->mBitangents));
+			glEnableVertexAttribArray(static_cast<unsigned int>(bonobo::shader_bindings::binormals));
+			glVertexAttribPointer(static_cast<unsigned int>(bonobo::shader_bindings::binormals), 3, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const*>(binormals_offset));
+		}
+
+		glBindBuffer(GL_ARRAY_BUFFER, 0u);
+
+		auto const num_vertices_per_face = assimp_object_mesh->mFaces[0u].mNumIndices;
+		object.indices_nb = assimp_object_mesh->mNumFaces * num_vertices_per_face;
+		auto object_indices = std::make_unique<GLuint[]>(static_cast<size_t>(object.indices_nb));
+		for (size_t i = 0u; i < assimp_object_mesh->mNumFaces; ++i) {
+			auto const& face = assimp_object_mesh->mFaces[i];
+			assert(face.mNumIndices <= 3);
+			object_indices[num_vertices_per_face * i + 0u] = face.mIndices[0u];
+			if (num_vertices_per_face >= 1u)
+				object_indices[num_vertices_per_face * i + 1u] = face.mIndices[1u];
+			if (num_vertices_per_face >= 2u)
+				object_indices[num_vertices_per_face * i + 2u] = face.mIndices[2u];
+		}
+		glGenBuffers(1, &object.ibo);
+		assert(object.ibo != 0u);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, object.ibo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, static_cast<unsigned int>(object.indices_nb) * sizeof(GL_UNSIGNED_INT), reinterpret_cast<GLvoid const*>(object_indices.get()), GL_STATIC_DRAW);
+		object_indices.reset(nullptr);
+
+		glBindVertexArray(0u);
+		glBindBuffer(GL_ARRAY_BUFFER, 0u);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0u);
+
+		auto const material_id = assimp_object_mesh->mMaterialIndex;
+		if (material_id < materials_bindings.size())
+			object.bindings = materials_bindings[material_id];
+
+		objects.push_back(object);
+
+		auto const mesh_end_time = std::chrono::high_resolution_clock::now();
+
+		std::string attributes = assimp_object_mesh->HasNormals() ? "normals" : "";
+		if (!attributes.empty())
+		  attributes += " | ";
+		if (assimp_object_mesh->HasTangentsAndBitangents())
+		  attributes += "tangents&bitangents";
+		if (!attributes.empty())
+		  attributes += " | ";
+		if (assimp_object_mesh->HasTextureCoords(0))
+		  attributes += "texture coordinates";
+		LogTrivia("│ %s Mesh \"%s\" loaded with attributes [%s] in %.3f ms",
+		          j == 0 ? "┌" : (j == assimp_scene->mNumMeshes - 1 ? "└" : "├"),
+		          assimp_object_mesh->mName.C_Str(), attributes.c_str(),
+		          std::chrono::duration<float, std::milli>(mesh_end_time - mesh_start_time).count());
+	}
+	auto const meshes_end_time = std::chrono::high_resolution_clock::now();
+
+	auto const scene_end_time = std::chrono::high_resolution_clock::now();
+	LogInfo("┕ Scene loaded in %.3f s: %u textures loaded in %.3f s and %zu meshes in %.3f s",
+	        std::chrono::duration<float>(scene_end_time - scene_start_time).count(),
+	        texture_count,
+	        std::chrono::duration<float>(materials_end_time - materials_start_time).count(),
+	        objects.size(),
+	        std::chrono::duration<float>(meshes_end_time - meshes_start_time).count());
+
+	return objects;
+}
+
+GLuint
+bonobo::createTexture(uint32_t width, uint32_t height, GLenum target, GLint internal_format, GLenum format, GLenum type, GLvoid const* data)
+{
+	GLuint texture = 0u;
+	glGenTextures(1, &texture);
+	assert(texture != 0u);
+	glBindTexture(target, texture);
+	glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	switch (target) {
+	case GL_TEXTURE_1D:
+		glTexImage1D(target, 0, internal_format, static_cast<GLsizei>(width), 0, format, type, data);
+		break;
+	case GL_TEXTURE_2D:
+		glTexImage2D(target, 0, internal_format, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, format, type, data);
+		break;
+	default:
+		glDeleteTextures(1, &texture);
+		LogError("Non-handled texture target: %08x.\n", target);
+		return 0u;
+	}
+	glBindTexture(target, 0u);
+
+	return texture;
+}
+
+GLuint
+bonobo::loadTexture2D(std::string const& filename, bool generate_mipmap)
+{
+	std::uint32_t width, height;
+	auto const data = getTextureData(filename, width, height, true);
+	if (data.empty())
+		return 0u;
+
+	GLuint texture = bonobo::createTexture(width, height, GL_TEXTURE_2D, GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, reinterpret_cast<GLvoid const*>(data.data()));
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, generate_mipmap ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	if (generate_mipmap)
+		glGenerateMipmap(GL_TEXTURE_2D);
+	glBindTexture(GL_TEXTURE_2D, 0u);
+
+	return texture;
+}
+
+GLuint
+bonobo::loadTextureCubeMap(std::string const& posx, std::string const& negx,
+                           std::string const& posy, std::string const& negy,
+                           std::string const& posz, std::string const& negz,
+                           bool generate_mipmap)
+{
+	GLuint texture = 0u;
+	// Create an OpenGL texture object. Similarly to `glGenVertexArrays()`
+	// and `glGenBuffers()` that were used in assignment 2,
+	// `glGenTextures()` can create `n` texture objects at once. Here we
+	// only one texture object that will contain our whole cube map.
+	glGenTextures(1, &texture);
+	assert(texture != 0u);
+
+	// Similarly to vertex arrays and buffers, we first need to bind the
+	// texture object in orther to use it. Here we will bind it to the
+	// GL_TEXTURE_CUBE_MAP target to indicate we want a cube map. If you
+	// look at `bonobo::loadTexture2D()` just above, you will see that
+	// GL_TEXTURE_2D is used there, as we want a simple 2D-texture.
+	glBindTexture(GL_TEXTURE_CUBE_MAP, texture);
+
+	// Set the wrapping properties of the texture; you can have a look on
+	// http://docs.gl to learn more about them
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	// Set the minification and magnification properties of the textures;
+	// you can have a look on http://docs.gl to lear more about them, or
+	// attend EDAN35 in the next period ;-)
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, generate_mipmap ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	// We need to fill in the cube map using the images passed in as
+	// argument. The function `getTextureData()` uses stb to read in the
+	// image files and return a `std::vector<std::uint8_t>` containing all the
+	// texels.
+	std::uint32_t width, height;
+	auto data = getTextureData(negx, width, height, false);
+	if (data.empty()) {
+		glDeleteTextures(1, &texture);
+		return 0u;
+	}
+
+	// With all the texels available on the CPU, we now want to push them
+	// to the GPU: this is done using `glTexImage2D()` (among others). You
+	// might have thought that the target used here would be the same as
+	// the one passed to `glBindTexture()` or `glTexParameteri()`, similar
+	// to what is done `bonobo::loadTexture2D()`. However, we want to fill
+	// in a cube map, which has six different faces, so instead we specify
+	// as the target the face we want to fill in. In this case, we will
+	// start by filling the face sitting on the negative side of the
+	// x-axis by specifying GL_TEXTURE_CUBE_MAP_NEGATIVE_X.
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_X,
+	             /* mipmap level, you'll see that in EDAN35 */0,
+	             /* how are the components internally stored */GL_RGBA,
+	             /* the width of the cube map's face */static_cast<GLsizei>(width),
+	             /* the height of the cube map's face */static_cast<GLsizei>(height),
+	             /* must always be 0 */0,
+	             /* the format of the pixel data: which components are available */GL_RGBA,
+	             /* the type of each component */GL_UNSIGNED_BYTE,
+	             /* the pointer to the actual data on the CPU */reinterpret_cast<GLvoid const*>(data.data()));
+
+	auto data_posx = getTextureData(posx, width, height, false);
+	auto data_negy = getTextureData(negy, width, height, false);
+	auto data_posy = getTextureData(posy, width, height, false);
+	auto data_negz = getTextureData(negz, width, height, false);
+	auto data_posz = getTextureData(posz, width, height, false);
+
+	if (data_posx.empty() ||
+		data_negy.empty() ||
+		data_posy.empty() ||
+		data_negz.empty() ||
+		data_posz.empty()) {
+		glDeleteTextures(1, &texture);
+		return 0u;
+	}
+
+
+
+
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X,
+		/* mipmap level, you'll see that in EDAN35 */0,
+		/* how are the components internally stored */GL_RGBA,
+		/* the width of the cube map's face */static_cast<GLsizei>(width),
+		/* the height of the cube map's face */static_cast<GLsizei>(height),
+		/* must always be 0 */0,
+		/* the format of the pixel data: which components are available */GL_RGBA,
+		/* the type of each component */GL_UNSIGNED_BYTE,
+		/* the pointer to the actual data on the CPU */reinterpret_cast<GLvoid const*>(data_posx.data()));
+
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Y,
+		/* mipmap level, you'll see that in EDAN35 */0,
+		/* how are the components internally stored */GL_RGBA,
+		/* the width of the cube map's face */static_cast<GLsizei>(width),
+		/* the height of the cube map's face */static_cast<GLsizei>(height),
+		/* must always be 0 */0,
+		/* the format of the pixel data: which components are available */GL_RGBA,
+		/* the type of each component */GL_UNSIGNED_BYTE,
+		/* the pointer to the actual data on the CPU */reinterpret_cast<GLvoid const*>(data_negy.data()));
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Y,
+		/* mipmap level, you'll see that in EDAN35 */0,
+		/* how are the components internally stored */GL_RGBA,
+		/* the width of the cube map's face */static_cast<GLsizei>(width),
+		/* the height of the cube map's face */static_cast<GLsizei>(height),
+		/* must always be 0 */0,
+		/* the format of the pixel data: which components are available */GL_RGBA,
+		/* the type of each component */GL_UNSIGNED_BYTE,
+		/* the pointer to the actual data on the CPU */reinterpret_cast<GLvoid const*>(data_posy.data()));
+
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z,
+		/* mipmap level, you'll see that in EDAN35 */0,
+		/* how are the components internally stored */GL_RGBA,
+		/* the width of the cube map's face */static_cast<GLsizei>(width),
+		/* the height of the cube map's face */static_cast<GLsizei>(height),
+		/* must always be 0 */0,
+		/* the format of the pixel data: which components are available */GL_RGBA,
+		/* the type of each component */GL_UNSIGNED_BYTE,
+		/* the pointer to the actual data on the CPU */reinterpret_cast<GLvoid const*>(data_negz.data()));
+	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_Z,
+		/* mipmap level, you'll see that in EDAN35 */0,
+		/* how are the components internally stored */GL_RGBA,
+		/* the width of the cube map's face */static_cast<GLsizei>(width),
+		/* the height of the cube map's face */static_cast<GLsizei>(height),
+		/* must always be 0 */0,
+		/* the format of the pixel data: which components are available */GL_RGBA,
+		/* the type of each component */GL_UNSIGNED_BYTE,
+		/* the pointer to the actual data on the CPU */reinterpret_cast<GLvoid const*>(data_posz.data()));
+
+	//! \todo repeat now the texture filling for the 5 remaining faces
+
+	if (generate_mipmap)
+		// Generate the mipmap hierarchy; wait for EDAN35 to understand
+		// what it does
+		glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+
+	glBindTexture(GL_TEXTURE_CUBE_MAP, 0u);
+
+	return texture;
+}
+
+GLuint
+bonobo::createProgram(std::string const& vert_shader_source_path, std::string const& frag_shader_source_path)
+{
+	auto const vertex_shader_source = utils::slurp_file(config::shaders_path(vert_shader_source_path));
+	GLuint vertex_shader = utils::opengl::shader::generate_shader(GL_VERTEX_SHADER, vertex_shader_source);
+	if (vertex_shader == 0u)
+		return 0u;
+
+	auto const fragment_shader_source = utils::slurp_file(config::shaders_path(frag_shader_source_path));
+	GLuint fragment_shader = utils::opengl::shader::generate_shader(GL_FRAGMENT_SHADER, fragment_shader_source);
+	if (fragment_shader == 0u)
+		return 0u;
+
+	GLuint program = utils::opengl::shader::generate_program({ vertex_shader, fragment_shader });
+	glDeleteShader(vertex_shader);
+	glDeleteShader(fragment_shader);
+	return program;
+}
+
+void
+bonobo::displayTexture(glm::vec2 const& lower_left, glm::vec2 const& upper_right, GLuint texture, GLuint sampler, glm::ivec4 const& swizzle, glm::ivec2 const& window_size, bool linearise, float nearPlane, float farPlane)
+{
+	auto const relative_to_absolute = [](float coord, int size) {
+		return static_cast<GLint>((coord + 1.0f) / 2.0f * size);
+	};
+	auto const viewport_origin = glm::ivec2(relative_to_absolute(lower_left.x, window_size.x),
+	                                        relative_to_absolute(lower_left.y, window_size.y));
+	auto const viewport_size = glm::ivec2(relative_to_absolute(upper_right.x, window_size.x),
+	                                      relative_to_absolute(upper_right.y, window_size.y))
+	                         - viewport_origin;
+
+	glViewport(viewport_origin.x, viewport_origin.y, viewport_size.x, viewport_size.y);
+	glUseProgram(local::fullscreen_shader);
+	glBindVertexArray(local::display_vao);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glBindSampler(0, sampler);
+	glUniform1i(glGetUniformLocation(local::fullscreen_shader, "tex"), 0);
+	glUniform4iv(glGetUniformLocation(local::fullscreen_shader, "swizzle"), 1, glm::value_ptr(swizzle));
+	glUniform1i(glGetUniformLocation(local::fullscreen_shader, "linearise"), linearise);
+	glUniform1f(glGetUniformLocation(local::fullscreen_shader, "near"), nearPlane);
+	glUniform1f(glGetUniformLocation(local::fullscreen_shader, "far"), farPlane);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glBindSampler(0, 0u);
+	glBindTexture(GL_TEXTURE_2D, 0);
+	glUseProgram(0);
+}
+
+GLuint
+bonobo::createFBO(std::vector<GLuint> const& color_attachments, GLuint depth_attachment)
+{
+	auto const attach = [](GLenum attach_point, GLuint attachment){
+		glFramebufferTexture2D(GL_FRAMEBUFFER, attach_point, GL_TEXTURE_2D, attachment, 0);
+		auto const status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+		if (status != GL_FRAMEBUFFER_COMPLETE)
+			LogError("Failed to attach %u at %u", attachment, attach_point);
+	};
+
+	GLuint fbo = 0u;
+	glGenFramebuffers(1, &fbo);
+	assert(fbo != 0u);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	for (size_t i = 0; i < color_attachments.size(); ++i)
+		attach(static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + i), color_attachments[i]);
+	if (depth_attachment != 0u)
+		attach(GL_DEPTH_ATTACHMENT, depth_attachment);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	return fbo;
+}
+
+GLuint
+bonobo::createSampler(std::function<void (GLuint)> const& setup)
+{
+	GLuint sampler = 0u;
+	glGenSamplers(1, &sampler);
+	assert(sampler != 0u);
+	setup(sampler);
+	return sampler;
+}
+
+void
+bonobo::drawFullscreen()
+{
+	glBindVertexArray(local::display_vao);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+	glBindVertexArray(0u);
+}
+
+void
+bonobo::renderBasis(float thickness_scale, float length_scale, glm::mat4 const& view_projection, glm::mat4 const& world)
+{
+	glUseProgram(basis.shader);
+	glBindVertexArray(basis.vao);
+	glUniformMatrix4fv(basis.shader_locations.world, 1, GL_FALSE, glm::value_ptr(world));
+	glUniformMatrix4fv(basis.shader_locations.view_proj, 1, GL_FALSE, glm::value_ptr(view_projection));
+	glUniform1f(basis.shader_locations.thickness_scale, thickness_scale);
+	glUniform1f(basis.shader_locations.length_scale, length_scale);
+	glDrawElementsInstanced(GL_TRIANGLES, basis.index_count, GL_UNSIGNED_BYTE, nullptr, 3);
+	glBindVertexArray(0u);
+	glUseProgram(0u);
+}
+
+bool
+bonobo::uiSelectCullMode(std::string const& label, enum cull_mode_t& cull_mode) noexcept
+{
+	auto cull_mode_index = static_cast<int>(cull_mode);
+	bool was_modified = ImGui::Combo(label.c_str(), &cull_mode_index,
+	                                 local::cull_mode_labels.data(),
+	                                 local::cull_mode_labels.size());
+	cull_mode = static_cast<cull_mode_t>(cull_mode_index);
+	return was_modified;
+}
+
+void
+bonobo::changeCullMode(enum cull_mode_t const cull_mode) noexcept
+{
+	switch (cull_mode) {
+		case bonobo::cull_mode_t::disabled:
+			glDisable(GL_CULL_FACE);
+			break;
+		case bonobo::cull_mode_t::back_faces:
+			glEnable(GL_CULL_FACE);
+			glCullFace(GL_BACK);
+			break;
+		case bonobo::cull_mode_t::front_faces:
+			glEnable(GL_CULL_FACE);
+			glCullFace(GL_FRONT);
+			break;
+	}
+}
+
+bool
+bonobo::uiSelectPolygonMode(std::string const& label, enum polygon_mode_t& polygon_mode) noexcept
+{
+	auto polygon_mode_index = static_cast<int>(polygon_mode);
+	bool was_modified = ImGui::Combo(label.c_str(), &polygon_mode_index,
+	                                 local::polygon_mode_labels.data(),
+	                                 local::polygon_mode_labels.size());
+	polygon_mode = static_cast<polygon_mode_t>(polygon_mode_index);
+	return was_modified;
+}
+
+void
+bonobo::changePolygonMode(enum polygon_mode_t const polygon_mode) noexcept
+{
+	switch (polygon_mode) {
+		case bonobo::polygon_mode_t::fill:
+			glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+			break;
+		case bonobo::polygon_mode_t::line:
+			glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+			break;
+		case bonobo::polygon_mode_t::point:
+			glPolygonMode(GL_FRONT_AND_BACK, GL_POINT);
+			break;
+	}
+}
+
+namespace
+{
+	void setupBasisData()
+	{
+		glGenVertexArrays(1, &basis.vao);
+		assert(basis.vao != 0);
+		glBindVertexArray(basis.vao);
+
+		glGenBuffers(1, &basis.vbo);
+		assert(basis.vbo != 0);
+		auto const halfThickness = 0.1f;
+		std::array<glm::vec3, 13> const vertices = {
+			// Body of the arrow
+			glm::vec3(0.0f, -halfThickness, -halfThickness),
+			glm::vec3(0.0f, -halfThickness,  halfThickness),
+			glm::vec3(0.0f,  halfThickness,  halfThickness),
+			glm::vec3(0.0f,  halfThickness, -halfThickness),
+			glm::vec3(1.0f, -halfThickness, -halfThickness),
+			glm::vec3(1.0f, -halfThickness,  halfThickness),
+			glm::vec3(1.0f,  halfThickness,  halfThickness),
+			glm::vec3(1.0f,  halfThickness, -halfThickness),
+			// Tip of the arrow
+			glm::vec3(1.0f, -2.0f*halfThickness, -2.0f*halfThickness),
+			glm::vec3(1.0f, -2.0f*halfThickness,  2.0f*halfThickness),
+			glm::vec3(1.0f,  2.0f*halfThickness,  2.0f*halfThickness),
+			glm::vec3(1.0f,  2.0f*halfThickness, -2.0f*halfThickness),
+			glm::vec3(1.0f+4.0f*halfThickness,  0.0f, 0.0f),
+		};
+		glBindBuffer(GL_ARRAY_BUFFER, basis.vbo);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices.data(), GL_STATIC_DRAW);
+
+		glEnableVertexAttribArray(0u);
+		glVertexAttribPointer(0u, 3, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const*>(0x0));
+
+		glGenBuffers(1, &basis.ibo);
+		assert(basis.ibo != 0);
+		std::array<glm::u8vec3, 16> const indices = {
+			// Body: Left
+			glm::u8vec3(0u, 1u, 2u),
+			glm::u8vec3(0u, 2u, 3u),
+			// Body: Back
+			glm::u8vec3(4u, 0u, 3u),
+			glm::u8vec3(4u, 3u, 7u),
+			// Body: Bottom
+			glm::u8vec3(0u, 4u, 5u),
+			glm::u8vec3(0u, 5u, 1u),
+			// Body: Front
+			glm::u8vec3(1u, 5u, 6u),
+			glm::u8vec3(1u, 6u, 2u),
+			// Body: Top
+			glm::u8vec3(2u, 6u, 7u),
+			glm::u8vec3(2u, 7u, 3u),
+			// Tip: Left
+			glm::u8vec3(8u, 9u, 10u),
+			glm::u8vec3(8u, 10u, 11u),
+			// Tip: Back
+			glm::u8vec3(12u, 8u, 11u),
+			// Tip: Bottom
+			glm::u8vec3(8u, 12u, 9u),
+			// Tip: Front
+			glm::u8vec3(9u, 12u, 10u),
+			// Tip: Top
+			glm::u8vec3(10u, 12u, 11u)
+		};
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, basis.ibo);
+		glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices.data(), GL_STATIC_DRAW);
+
+		basis.index_count = indices.size() * 3;
+
+		glBindVertexArray(0u);
+		glBindBuffer(GL_ARRAY_BUFFER, 0U);
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0U);
+
+		basis.shader = bonobo::createProgram("common/basis.vert", "common/basis.frag");
+		if (basis.shader == 0u)
+			LogError("Failed to load \"basis.vert\" and \"basis.frag\"");
+
+		GLint shader_location = glGetUniformLocation(basis.shader, "vertex_model_to_world");
+		assert(shader_location >= 0);
+		basis.shader_locations.world = shader_location;
+
+		shader_location = glGetUniformLocation(basis.shader, "vertex_world_to_clip");
+		assert(shader_location >= 0);
+		basis.shader_locations.view_proj = shader_location;
+
+		shader_location = glGetUniformLocation(basis.shader, "thickness_scale");
+		assert(shader_location >= 0);
+		basis.shader_locations.thickness_scale = shader_location;
+
+		shader_location = glGetUniformLocation(basis.shader, "length_scale");
+		assert(shader_location >= 0);
+		basis.shader_locations.length_scale = shader_location;
+	}
+}
+
+#pragma once
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+
+#include "core/FPSCamera.h" // As it includes OpenGL headers, import it after glad
+
+#include <functional>
+#include <string>
+#include <vector>
+#include <unordered_map>
+
+//! \brief Namespace containing a few helpers for the LUGG computer graphics labs.
+namespace bonobo
+{
+	//! \brief Formalise mapping between an OpenGL VAO attribute binding,
+	//!        and the meaning of that attribute.
+	enum class shader_bindings : unsigned int{
+		vertices = 0u, //!< = 0, value of the binding point for vertices
+		normals,       //!< = 1, value of the binding point for normals
+		texcoords,     //!< = 2, value of the binding point for texcoords
+		tangents,      //!< = 3, value of the binding point for tangents
+		binormals      //!< = 4, value of the binding point for binormals
+	};
+
+	//! \brief Association of a sampler name used in GLSL to a
+	//!        corresponding texture ID.
+	using texture_bindings = std::unordered_map<std::string, GLuint>;
+
+	//! \brief Contains the data for a mesh in OpenGL.
+	struct mesh_data {
+		GLuint vao{0u};                          //!< OpenGL name of the Vertex Array Object
+		GLuint bo{0u};                           //!< OpenGL name of the Buffer Object
+		GLuint ibo{0u};                          //!< OpenGL name of the Buffer Object for indices
+		size_t vertices_nb{0u};                  //!< number of vertices stored in bo
+		size_t indices_nb{0u};                   //!< number of indices stored in ibo
+		texture_bindings bindings{};             //!< texture bindings for this mesh
+		GLenum drawing_mode{GL_TRIANGLES};       //!< OpenGL drawing mode, i.e. GL_TRIANGLES, GL_LINES, etc.
+		std::string name{};                      //!< Name of the mesh; used for debugging purposes.
+	};
+
+	enum class cull_mode_t : unsigned int {
+		disabled = 0u,
+		back_faces,
+		front_faces
+	};
+
+	enum class polygon_mode_t : unsigned int {
+		fill = 0u,
+		line,
+		point
+	};
+
+	//! \brief Allocate some objects needed by some helper functions.
+	void init();
+
+	//! \brief Deallocate objects allocated by the `init()` function.
+	void deinit();
+
+	//! \brief Load objects found in an object/scene file, using assimp.
+	//!
+	//! @param [in] filename of the object/scene file to load.
+	//! @return a vector of filled in `mesh_data` structures, one per
+	//!         object found in the input file
+	std::vector<mesh_data> loadObjects(std::string const& filename);
+
+	//! \brief Creates an OpenGL texture without any content nor parameters.
+	//!
+	//! @param [in] width width of the texture to create
+	//! @param [in] height height of the texture to create
+	//! @param [in] target OpenGL texture target to create, i.e.
+	//!             GL_TEXTURE_2D & co.
+	//! @param [in] internal_format formatting of the texture, i.e. how many
+	//!             channels
+	//! @param [in] format formatting of the pixel data, i.e. in which
+	//!             layout are the channels stored
+	//! @param [in] type data type of the pixel data
+	//! @param [in] data what to put in the texture
+	GLuint createTexture(uint32_t width, uint32_t height,
+	                     GLenum target = GL_TEXTURE_2D,
+	                     GLint internal_format = GL_RGBA,
+	                     GLenum format = GL_RGBA,
+	                     GLenum type = GL_UNSIGNED_BYTE,
+	                     GLvoid const* data = nullptr);
+
+	//! \brief Load an image into an OpenGL 2D-texture.
+	//!
+	//! @param [in] filename of the image.
+	//! @param [in] generate_mipmap whether or not to generate a mipmap hierarchy
+	//! @return the name of the OpenGL 2D-texture
+	GLuint loadTexture2D(std::string const& filename,
+	                     bool generate_mipmap = true);
+
+	//! \brief Load six images into an OpenGL cubemap-texture.
+	//!
+	//! @param [in] posx path to the texture on the left of the cubemap
+	//! @param [in] negx path to the texture on the right of the cubemap
+	//! @param [in] posy path to the texture on the top of the cubemap
+	//! @param [in] negy path to the texture on the bottom of the cubemap
+	//! @param [in] posz path to the texture on the back of the cubemap
+	//! @param [in] negz path to the texture on the front of the cubemap
+	//! @param [in] generate_mipmap whether or not to generate a mipmap hierarchy
+	//! @return the name of the OpenGL cubemap-texture
+	GLuint loadTextureCubeMap(std::string const& posx, std::string const& negx,
+                                  std::string const& posy, std::string const& negy,
+                                  std::string const& posz, std::string const& negz,
+                                  bool generate_mipmap = true);
+
+	//! \brief Create an OpenGL program consisting of a vertex and a
+	//!        fragment shader.
+	//!
+	//! @param [in] vert_shader_source_path of the vertex shader source
+	//!             code, relative to the `shaders/` folder
+	//! @param [in] frag_shader_source_path of the fragment shader source
+	//!             code, relative to the `shaders/` folder
+	//! @return the name of the OpenGL shader program
+	GLuint createProgram(std::string const& vert_shader_source_path,
+	                     std::string const& frag_shader_source_path);
+
+	//! \brief Display the current texture in the specified rectangle.
+	//!
+	//! @param [in] lower_left the lower left corner of the rectangle
+	//!             containing the texture
+	//! @param [in] upper_right the upper rigth corner of the rectangle
+	//!             containing the texture
+	//! @param [in] texture the OpenGL name of the texture to display
+	//! @param [in] sampler the OpenGL name of the sampler to use
+	//! @param [in] swizzle how to mix in the different channels, for
+	//!             example (0, 2, 1, -1) will swap the green and blue
+	//!             channels as well as invalidating (setting it to 1) the
+	//!             alpha channel
+	//! @param [in] window_size the size in pixels of the main window, the
+	//!             one relative to which you want to draw this texture
+	//! @param [in] linearise whether the given texture should be
+	//!             linearised using the provided |nearPlane| and
+	//!             |farPlane|.
+	//! @param [in] nearPlane the near plane used when linearising depth
+	//!             textures; it is ignored if |linearise| is false.
+	//! @param [in] farPlane the far plane used when linearising depth
+	//!             textures; it is ignored if |linearise| is false.
+	void displayTexture(glm::vec2 const& lower_left,
+	                    glm::vec2 const& upper_right, GLuint texture,
+	                    GLuint sampler, glm::ivec4 const& swizzle,
+	                    glm::ivec2 const& window_size, bool linearise = false,
+	                    float nearPlane = 0.0f, float farPlane = 0.0f);
+
+	//! \brief Create an OpenGL FrameBuffer Object using the specified
+	//!        attachments.
+	//!
+	//! @param [in] color_attachments a vector of all the texture to bind
+	//!             as color attachment, i.e. not as depth texture
+	//! @param [in] depth_attachment a texture, if any, to use as depth
+	//!             attachment
+	//! @return the name of the OpenGL FBO
+	GLuint createFBO(std::vector<GLuint> const& color_attachments,
+	                 GLuint depth_attachment = 0u);
+
+	//! \brief Create an OpenGL sampler and set it up.
+	//!
+	//! @param [in] setup a lambda function to parameterise the sampler
+	//! @return the name of the OpenGL sampler
+	GLuint createSampler(std::function<void (GLuint)> const& setup);
+
+	//! \brief Draw full screen.
+	void drawFullscreen();
+
+	//! \brief Render a right-hand orthonormal basis.
+	//!
+	//! @param [in] thickness_scale By how much to scale the thickness of the axes
+	//! @param [in] length_scale By how much to scale the length of the axes
+	//! @param [in] view_projection Matrix transforming from world-space to clip-space
+	//! @param [in] world Matrix transforming from model-space to
+	//!             world-space
+	void renderBasis(float thickness_scale, float length_scale, glm::mat4 const& view_projection, glm::mat4 const& world = glm::mat4(1.0f));
+
+	//! \brief Add a combo box to the current ImGUI window, to choose a
+	//!        cull mode.
+	//!
+	//! @param [in] label Text to be displayed near the combo box.
+	//! @param [inout] cull_mode The currently selected cull mode,
+	//!                which will be modified to contain the newly selected
+	//!                one.
+	//! @return whether the selection was changed
+	bool uiSelectCullMode(std::string const& label, enum cull_mode_t& cull_mode) noexcept;
+
+	//! \brief Enable or disable culling, and call glCullFace with the
+	//!        specified cull mode.
+	void changeCullMode(enum cull_mode_t const cull_mode) noexcept;
+
+	//! \brief Add a combo box to the current ImGUI window, to choose a
+	//!        polygon mode.
+	//!
+	//! @param [in] label Text to be displayed near the combo box.
+	//! @param [inout] polygon_mode The currently selected polygon mode,
+	//!                which will be modified to contain the newly selected
+	//!                one.
+	//! @return whether the selection was changed
+	bool uiSelectPolygonMode(std::string const& label, enum polygon_mode_t& polygon_mode) noexcept;
+
+	//! \brief Call glPolygonMode for both front and back faces, with the
+	//!        specified polygon mode.
+	void changePolygonMode(enum polygon_mode_t const polygon_mode) noexcept;
+}
+
+#include "InputHandler.h"
+
+/*----------------------------------------------------------------------------*/
+
+InputHandler::InputHandler()
+{
+	for (auto& mousePosition : mMousePositionSwitched)
+	{
+		mousePosition = mMousePosition;
+	}
+}
+
+void InputHandler::Advance()
+{
+	mTick++;
+}
+
+void InputHandler::DownEvent(InputStateMap& map, size_t loc)
+{
+	// If the key already exists, insert does not modify the associated value
+	// and just returns an iterator to it.
+	auto insertionResult = map.insert({ loc, IState() });
+	auto& state = insertionResult.first->second;
+	state.mIsDown = true;
+	state.mDownTick = mTick;
+}
+
+void InputHandler::UpEvent(InputStateMap& map, size_t loc)
+{
+	// If the key already exists, insert does not modify the associated value
+	// and just returns an iterator to it.
+	auto insertionResult = map.insert({ loc, IState() });
+	auto& state = insertionResult.first->second;
+	state.mIsDown = false;
+	state.mUpTick = mTick;
+}
+
+void InputHandler::FeedKeyboard(int key, int scancode, int action)
+{
+	switch (action)
+	{
+		case GLFW_PRESS:
+			DownEvent(mScancodeMap, static_cast<size_t>(scancode));
+			DownEvent(mKeycodeMap, static_cast<size_t>(key));
+			break;
+		case GLFW_RELEASE:
+			UpEvent(mScancodeMap, static_cast<size_t>(scancode));
+			UpEvent(mKeycodeMap, static_cast<size_t>(key));
+			break;
+		default:
+			break;
+	}
+}
+
+void InputHandler::FeedMouseMotion(glm::vec2 const& position)
+{
+	mMousePosition = position;
+}
+
+void InputHandler::FeedMouseButtons(int button, int action)
+{
+	switch (action)
+	{
+		case GLFW_PRESS:
+			DownEvent(mMouseMap, static_cast<size_t>(button));
+			break;
+		case GLFW_RELEASE:
+			UpEvent(mMouseMap, static_cast<size_t>(button));
+			break;
+		default:
+			break;
+	}
+	mMousePositionSwitched[button] = mMousePosition;
+}
+
+std::uint32_t InputHandler::GetState(InputStateMap const& map, size_t loc)
+{
+	auto const sc = map.find(loc);
+	if (sc == map.end())
+		return RELEASED;
+
+	auto const& state = sc->second;
+	std::uint32_t s = state.mIsDown ? PRESSED : RELEASED;
+	s |= mTick-1 == state.mDownTick ? JUST_PRESSED : 0;
+	s |= mTick-1 == state.mUpTick ? JUST_RELEASED : 0;
+
+	return s;
+}
+
+std::uint32_t InputHandler::GetScancodeState(int scancode)
+{
+	return GetState(mScancodeMap, static_cast<size_t>(scancode));
+}
+
+std::uint32_t InputHandler::GetKeycodeState(int  key)
+{
+	return GetState(mKeycodeMap, static_cast<size_t>(key));
+}
+
+std::uint32_t InputHandler::GetMouseState(std::uint32_t button)
+{
+	return GetState(mMouseMap, static_cast<size_t>(button));
+}
+
+glm::vec2 InputHandler::GetMousePositionAtStateShift(std::uint32_t button)
+{
+	return mMousePositionSwitched[button];
+}
+
+glm::vec2 InputHandler::GetMousePosition()
+{
+	return mMousePosition;
+}
+
+bool InputHandler::IsMouseCapturedByUI() const
+{
+	return mMouseCapturedByUI;
+}
+
+bool InputHandler::IsKeyboardCapturedByUI() const
+{
+	return mKeyboardCapturedByUI;
+}
+
+void InputHandler::SetUICapture(bool mouseCapture, bool keyboardCapture)
+{
+	mMouseCapturedByUI = mouseCapture;
+	mKeyboardCapturedByUI = keyboardCapture;
+}
+
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <unordered_map>
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#include <glm/vec2.hpp>
+
+/*----------------------------------------------------------------------------*/
+
+#define PRESSED						(1 << 0)
+#define RELEASED					(1 << 1)
+#define JUST_PRESSED				(1 << 2)
+#define JUST_RELEASED				(1 << 3)
+
+class InputHandler
+{
+public:
+	struct IState {
+		std::uint64_t mDownTick{ std::numeric_limits<std::uint64_t>::max() };
+		std::uint64_t mUpTick{ std::numeric_limits<std::uint64_t>::max() };
+		bool mIsDown{ false };
+	};
+
+public:
+	InputHandler();
+
+public:
+	void FeedKeyboard(int key, int scancode, int action);
+	void FeedMouseButtons(int button, int action);
+	void FeedMouseMotion(glm::vec2 const& position);
+	void Advance();
+	std::uint32_t GetScancodeState(int scancode);
+	std::uint32_t GetKeycodeState(int key);
+	std::uint32_t GetMouseState(std::uint32_t button);
+	glm::vec2 GetMousePositionAtStateShift(std::uint32_t button);
+	glm::vec2 GetMousePosition();
+	bool IsMouseCapturedByUI() const;
+	bool IsKeyboardCapturedByUI() const;
+	void SetUICapture(bool mouseCapture, bool keyboardCapture);
+
+private:
+	using InputStateMap = std::unordered_map<size_t, IState>;
+
+	void DownEvent(InputStateMap& map, size_t loc);
+	void UpEvent(InputStateMap& map, size_t loc);
+	std::uint32_t GetState(InputStateMap const& map, size_t loc);
+
+	InputStateMap mScancodeMap;
+	InputStateMap mKeycodeMap;
+	InputStateMap mMouseMap;
+
+	glm::vec2 mMousePosition{ -1.0f };
+	std::array<glm::vec2, GLFW_MOUSE_BUTTON_LAST> mMousePositionSwitched;
+
+	bool mMouseCapturedByUI{ false };
+	bool mKeyboardCapturedByUI{ false };
+
+	std::uint64_t mTick{ 0ULL };
+
+};
+
+
+#include "config.hpp"
+#include "Log.h"
+#include <cstring>
+#include <cstdio>
+#include <sstream>
+#include <string>
+#include <iostream>
+#include <thread>
+#include <unordered_map>
+#ifdef _WIN32
+#	include <Windows.h>
+#endif
+#include <mutex>
+
+namespace Log {
+
+#define RESULT_MAX_STRING_LENGTH	16384
+
+FILE *logfile = nullptr;
+void (* textout_func)(Type, const char *) = nullptr;
+std::unordered_map<size_t, size_t> once_map;
+size_t output_targets = LOG_OUT_STD | LOG_OUT_CUSTOM | LOG_OUT_FILE;
+std::mutex fileMutex;
+char log_result_string[RESULT_MAX_STRING_LENGTH];
+bool logIncludeThreadID = false;
+
+struct LogSettings {
+	Type type;
+	std::string prefix;
+	Verbosity verbosity;
+	Severity severity;
+};
+
+LogSettings logSettings[] = {
+	{ TYPE_SUCCESS		, "Success: "			, LOUD_UNSITUATED	, OK		},
+	{ TYPE_INFO			, ""					, LOUD_UNSITUATED	, OK		},
+	{ TYPE_NEUTRAL		, ""					, LOUD_UNSITUATED	, OK		},
+	{ TYPE_WARNING		, "Warning: "			, LOUD				, OK 		},
+	{ TYPE_ERROR		, "Error: "				, LOUD				, BAD	},
+	{ TYPE_FILE			, ""					, LOUD_UNSITUATED	, OK		},
+	{ TYPE_ASSERT		, "Assert: "			, LOUD				, BAD		},
+	{ TYPE_PARAM		, "Parameter error: "	, LOUD				, BAD		},
+	{ TYPE_TRIVIA		, ""					, LOUD_UNSITUATED	, OK		}
+};
+
+/*----------------------------------------------------------------------------*/
+
+void Init()
+{
+	SetOutputTargets(output_targets);
+}
+
+/*----------------------------------------------------------------------------*/
+
+void Destroy()
+{
+	fileMutex.lock();
+	if (!logfile)
+		return;
+	fprintf(logfile, "\n === End of log === \n\n");
+	fflush(logfile);
+	fclose(logfile);
+	logfile = nullptr;
+	fileMutex.unlock();
+}
+
+/*----------------------------------------------------------------------------*/
+
+void SetCustomOutputTargetFunc(void (* textout)(Type, const char *))
+{
+	textout_func = textout;
+}
+
+/*----------------------------------------------------------------------------*/
+
+void SetOutputTargets(size_t flags)
+{
+	output_targets = flags;
+	if (flags & LOG_OUT_FILE) {
+		fileMutex.lock();
+		if (logfile == nullptr) {
+			// Lazily initiate file
+			logfile = fopen("log.txt", "w");
+			fprintf(logfile, "\n === Log (%s, %s) === \n\n", __DATE__, __TIME__);
+			fflush(logfile);
+		}
+		fileMutex.unlock();
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+
+void SetVerbosity(Type type, Verbosity verbosity)
+{
+	logSettings[size_t(type)].verbosity = verbosity;
+}
+
+/*----------------------------------------------------------------------------*/
+
+void SetIncludeThreadID(bool inc)
+{
+	logIncludeThreadID = inc;
+}
+
+/*----------------------------------------------------------------------------*/
+
+void Report(
+		unsigned int		flags,
+		const char			*file,
+		const char			*function,
+		int					line,
+		Type				type,
+		const char			*str,
+		...
+	)
+{
+	if (output_targets == 0)
+		return;
+	size_t t = size_t(type);
+#ifndef LOG_WHISPERS
+	if (logSettings[t].verbosity == Verbosity::WHISPER)
+		return;
+#endif
+
+	size_t len;
+	va_list args;
+	va_start(args, str);
+	vsnprintf(log_result_string, RESULT_MAX_STRING_LENGTH - 1, str, args);
+	va_end(args);
+	len = strlen(log_result_string);
+	if (len >= (RESULT_MAX_STRING_LENGTH - 1))
+		strcat(&log_result_string[RESULT_MAX_STRING_LENGTH - 5], "...");
+
+	if (flags != 0) {
+		std::ostringstream os;
+		if ((flags & LOG_MESSAGE_ONCE_FLAG) != 0)
+			os << file << function << std::to_string(line) << log_result_string;
+		if ((type & LOG_LOCATION_ONCE_FLAG) != 0)
+			os << "_Loc" << file << function << std::to_string(line);
+		std::hash<std::string> hash_func;
+		size_t hash = hash_func(os.str());
+		auto elem = once_map.find(hash);
+		if (elem != once_map.end()) {
+			elem->second++; // Count the number of hits
+			return;
+		}
+		once_map[hash] = 1;
+	}
+
+	std::ostringstream os;
+	if (logIncludeThreadID) {
+		std::thread::id tid = std::this_thread::get_id();
+		os << "{" << tid << "} ";
+	}
+	if (logSettings[t].verbosity == LOUD) {
+		if (line == -1)
+			os << "[Unknown location]" << std::endl;
+		else
+			os << "[" << file << ", " << function << " (" << std::to_string(line) << ")]" << std::endl;
+	}
+	os << logSettings[t].prefix << log_result_string << std::endl;
+
+	if (output_targets & LOG_OUT_STD) {
+#if defined(_WIN32)
+		auto const widened_string = utils::widen(os.str());
+		fwprintf(logSettings[t].severity != Severity::OK ? stderr : stdout, L"%s", widened_string.c_str());
+#else
+		fprintf(logSettings[t].severity != Severity::OK ? stderr : stdout, "%s", os.str().c_str());
+#endif
+	}
+	if (output_targets & LOG_OUT_FILE) {
+		fileMutex.lock();
+		fprintf(logfile, "%s", os.str().c_str());
+		fflush(logfile);
+		fileMutex.unlock();
+	}
+	if (output_targets & LOG_OUT_CUSTOM && textout_func != nullptr)
+		textout_func(type, os.str().c_str());
+#ifdef _WIN32
+	if (logSettings[t].severity != Severity::OK && IsDebuggerPresent())
+  		__debugbreak();
+#endif
+	if (logSettings[t].severity == Severity::TERMINAL) {
+		Destroy();
+		exit(1); // TODO: Proper deconstruction
+	}
+}
+
+/*----------------------------------------------------------------------------*/
+
+bool ReportParam(
+		unsigned int		test,
+		const char			*file,
+		const char			*function,
+		int					line
+	)
+{
+	bool t = test != 0;
+	if (!t)	Report(0, file, function, line, Type::TYPE_PARAM, "Bad parameter!");
+	return t;
+}
+
+/*----------------------------------------------------------------------------*/
+
+};
+
+/*
+ * Error and warning handling system
+ */
+
+#include "BuildSettings.h"
+
+#include <cstddef>
+#include <cstdarg>
+
+#pragma once
+//#define ENABLE_ASSERT		1
+//#define ENABLE_PARAM_CHECK	1
+
+#define SUCCESS(r)			((r) == RESULT_SUCCESS)
+#define FAILURE(r)			(!SUCCESS(r))
+
+#if defined ENABLE_ASSERT && ENABLE_ASSERT != 0
+#	define Assert(m)		if (!(static_cast<unsigned int>(m))) Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_ASSERT, "Assertion failed at line %u in file %s.", __LINE__, __FILE__)
+#else
+#	define Assert(a)
+#endif
+
+#if defined ENABLE_PARAM_CHECK && ENABLE_PARAM_CHECK != 0
+#	define Param(m)			Log::ReportParam(static_cast<unsigned int>(m), __FILE__, __FUNCTION__, __LINE__)
+#else
+#	define Param(a)			true
+#endif
+
+#define LOG_MESSAGE_ONCE_FLAG		1
+#define LOG_LOCATION_ONCE_FLAG		2
+
+namespace Log {
+
+enum Type {
+	TYPE_SUCCESS		= 0,
+	TYPE_INFO			= 1,
+	TYPE_NEUTRAL		= 2,
+	TYPE_WARNING		= 3,
+	TYPE_ERROR			= 4,
+	TYPE_FILE			= 5,
+	TYPE_ASSERT			= 6,
+	TYPE_PARAM			= 7,
+	TYPE_TRIVIA			= 8,
+	N_TYPES				= 9
+};
+
+enum Severity {
+	OK = 0,
+	BAD,
+	TERMINAL
+};
+enum Verbosity {
+	WHISPER = 0,		// Disregard message
+	LOUD_UNSITUATED,	// Display message
+	LOUD				// Display message, with file, function and line prepended
+};
+
+#define LOG_OUT_STD		(1 << 0)
+#define LOG_OUT_FILE	(1 << 1)
+#define LOG_OUT_CUSTOM	(1 << 15)
+
+void Init();
+void Destroy();
+void SetCustomOutputTargetFunc(void (* textout)(Type, const char *));
+void SetOutputTargets(std::size_t targets);
+void SetVerbosity(Type type, Verbosity verbosity);
+void SetIncludeThreadID(bool inc);
+
+/** Report a result to a log file and standard output */
+void Report(
+		unsigned int		flags,
+		const char			*file,
+		const char			*function,
+		int					line,
+		Type				type,
+		const char			*str,
+		...
+	);
+
+bool ReportParam(
+		unsigned int		test,
+		const char			*file,
+		const char			*function,
+		int					line
+	);
+
+};
+
+//__forceinline Log::Type operator|(Log::Type l, Log::Type r)
+//{
+//	return static_cast<Log::Type>(static_cast<int>(l) | static_cast<int>(r));
+//}
+
+#if defined _WIN32
+#	define Log(m, ...)				Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_NEUTRAL, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogType(t, m, ...)		Log::Report(0, __FILE__, __FUNCTION__, __LINE__, t, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogMsgOnce(t, m, ...)	Log::Report(LOG_MESSAGE_ONCE_FLAG, __FILE__, __FUNCTION__, __LINE__, t, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogLocOnce(t, m, ...)	Log::Report(LOG_LOCATION_ONCE_FLAG, __FILE__, __FUNCTION__, __LINE__, t, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogWarning(m, ...)		Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_WARNING, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogError(m, ...)			Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_ERROR, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogFile(m, ...)			Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_FILE, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogInfo(m, ...)			Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_INFO, static_cast<char const*>(m), __VA_ARGS__)
+#	define LogTrivia(m, ...)		Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_TRIVIA, static_cast<char const*>(m), __VA_ARGS__)
+#else
+#	define Log(m, ...)				Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_NEUTRAL, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogType(t, m, ...)		Log::Report(0, __FILE__, __FUNCTION__, __LINE__, t, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogMsgOnce(t, m, ...)	Log::Report(LOG_MESSAGE_ONCE_FLAG, __FILE__, __FUNCTION__, __LINE__, t, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogLocOnce(t, m, ...)	Log::Report(LOG_LOCATION_ONCE_FLAG, __FILE__, __FUNCTION__, __LINE__, t, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogWarning(m, ...)		Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_WARNING, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogError(m, ...)			Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_ERROR, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogFile(m, ...)			Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_FILE, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogInfo(m, ...)			Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_INFO, static_cast<char const*>(m), ##__VA_ARGS__)
+#	define LogTrivia(m, ...)		Log::Report(0, __FILE__, __FUNCTION__, __LINE__, Log::Type::TYPE_TRIVIA, static_cast<char const*>(m), ##__VA_ARGS__)
+#endif
+
+#include <imgui.h>
+
+#include "Log.h"
+#include "LogView.h"
+
+#ifdef _WIN32
+#pragma warning (disable : 4996) // This function or variable may be unsafe
+#endif
+
+char Log::View::mOutput[BUFFER_ROWS * BUFFER_WIDTH * 2];
+char Log::View::mBuffer[BUFFER_ROWS][BUFFER_WIDTH];
+int Log::View::mLen[BUFFER_ROWS];
+Log::Type Log::View::mType[BUFFER_ROWS];
+int Log::View::mBufferPtr = 0;
+bool Log::View::mAutoScroll = true;
+bool Log::View::mScrollToBottom = true;
+static ImVec4 logViewTypeColor[Log::N_TYPES];
+
+void Log::View::Init()
+{
+	memset(mBuffer, 0, BUFFER_ROWS * BUFFER_WIDTH);
+	for (int i = 0; i < BUFFER_ROWS; i++)
+		mType[i] = Log::TYPE_TRIVIA;
+	Log::SetCustomOutputTargetFunc(Feed);
+	for (int i = 0; i < Log::N_TYPES; i++)
+		logViewTypeColor[i] = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); // default color
+	logViewTypeColor[Log::TYPE_WARNING	] = ImVec4(0.7f, 0.4f, 0.0f, 1.0f);
+	logViewTypeColor[Log::TYPE_ERROR	] = ImVec4(0.7f, 0.0f, 0.0f, 1.0f);
+	logViewTypeColor[Log::TYPE_ASSERT	] = ImVec4(0.7f, 0.0f, 0.0f, 1.0f);
+	logViewTypeColor[Log::TYPE_PARAM	] = ImVec4(0.7f, 0.0f, 0.0f, 1.0f);
+	logViewTypeColor[Log::TYPE_TRIVIA	] = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+
+	mScrollToBottom = true;
+}
+
+void Log::View::Destroy()
+{
+
+}
+
+void Log::View::Render()
+{
+	// Inspired by Dear ImGUI's ExampleAppConsole
+	bool const isWindowExpended = ImGui::Begin("Log", nullptr, ImGuiWindowFlags_None);
+	if (!isWindowExpended) {
+		ImGui::End();
+		return;
+	}
+
+	bool const copyToClipboard = ImGui::SmallButton("Copy"); ImGui::SameLine();
+	mScrollToBottom = mScrollToBottom || ImGui::SmallButton("Scroll to bottom"); ImGui::SameLine();
+	if (ImGui::SmallButton("Clear")) ClearLog();
+
+	ImGui::Separator();
+
+        // Options menu
+        if (ImGui::BeginPopup("Options"))
+        {
+            ImGui::Checkbox("Auto-scroll", &mAutoScroll);
+            ImGui::EndPopup();
+        }
+
+	static ImGuiTextFilter filter;
+	filter.Draw("Filter (\"incl,-excl\")", 180);
+
+	ImGui::Separator();
+
+        // Reserve enough left-over height for 1 separator + 1 input text
+        const float footerHeightToReserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
+        ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footerHeightToReserve), false, ImGuiWindowFlags_HorizontalScrollbar);
+	if (ImGui::BeginPopupContextWindow())
+	{
+		if (ImGui::Selectable("Clear")) ClearLog();
+		ImGui::EndPopup();
+	}
+
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 1)); // Tighten spacing
+	if (copyToClipboard)
+		ImGui::LogToClipboard();
+
+	for (int i = 0; i < BUFFER_ROWS; i++) {
+		int pos = (BUFFER_ROWS + (mBufferPtr + i)) % BUFFER_ROWS;
+		if (mLen[pos] == 0 || !filter.PassFilter(mBuffer[pos]))
+			continue;
+		ImGui::PushStyleColor(ImGuiCol_Text, logViewTypeColor[mType[pos]]);
+		ImGui::TextWrapped("%s", mBuffer[pos]);
+		ImGui::PopStyleColor();
+	}
+
+	if (copyToClipboard)
+		ImGui::LogFinish();
+	if (mScrollToBottom || (mAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()))
+            ImGui::SetScrollHereY(1.0f);
+	mScrollToBottom = false;
+
+	ImGui::PopStyleVar();
+	ImGui::EndChild();
+
+	ImGui::End();
+}
+
+void Log::View::Feed(Log::Type type, const char *msg)
+{
+	strncpy(mBuffer[mBufferPtr], msg, BUFFER_WIDTH - 1);
+	mLen[mBufferPtr] = (int) strlen(msg);
+	mType[mBufferPtr] = type;
+	mBufferPtr = (mBufferPtr + 1) % BUFFER_ROWS;
+
+	mScrollToBottom = true;
+}
+
+void Log::View::ClearLog()
+{
+	for (int& length : mLen)
+		length = 0;
+	mBufferPtr = 0;
+
+	mScrollToBottom = true;
+}
+
+// TODO: Timestamp
+
+#pragma once
+
+#include "Log.h"
+
+#define BUFFER_WIDTH	512
+#define BUFFER_ROWS		64
+
+namespace Log {
+
+class View {
+public:
+	static void Init();
+	static void Destroy();
+public:
+	static void Render();
+
+private:
+	static void Feed(Log::Type type, const char *msg);
+	static void ClearLog();
+
+private:
+	static char mOutput[BUFFER_ROWS * BUFFER_WIDTH * 2];
+	static char mBuffer[BUFFER_ROWS][BUFFER_WIDTH];
+	static int mLen[BUFFER_ROWS];
+	static Log::Type mType[BUFFER_ROWS];
+	static int mBufferPtr;
+	static bool mAutoScroll;
+	static bool mScrollToBottom;
+};
+
+}
+
+#include "node.hpp"
+#include "helpers.hpp"
+
+#include "core/Log.h"
+#include "core/opengl.hpp"
+
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+Node::Node() : _vao(0u), _vertices_nb(0u), _indices_nb(0u), _drawing_mode(GL_TRIANGLES), _has_indices(true), _program(nullptr), _textures(), _transform(), _children()
+{
+}
+
+void
+Node::render(glm::mat4 const& view_projection, glm::mat4 const& parent_transform) const
+{
+	if (_program != nullptr)
+		render(view_projection, parent_transform * _transform.GetMatrix(), *_program, _set_uniforms);
+}
+
+void
+Node::render(glm::mat4 const& view_projection, glm::mat4 const& world, GLuint program, std::function<void (GLuint)> const& set_uniforms) const
+{
+	if (_vao == 0u || program == 0u)
+		return;
+
+	if (utils::opengl::debug::isSupported())
+	{
+		glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 0u, _name.size(), _name.data());
+	}
+
+	glUseProgram(program);
+
+	auto const normal_model_to_world = glm::transpose(glm::inverse(world));
+
+	set_uniforms(program);
+
+	glUniformMatrix4fv(glGetUniformLocation(program, "vertex_model_to_world"), 1, GL_FALSE, glm::value_ptr(world));
+	glUniformMatrix4fv(glGetUniformLocation(program, "normal_model_to_world"), 1, GL_FALSE, glm::value_ptr(normal_model_to_world));
+	glUniformMatrix4fv(glGetUniformLocation(program, "vertex_world_to_clip"), 1, GL_FALSE, glm::value_ptr(view_projection));
+
+	for (size_t i = 0u; i < _textures.size(); ++i) {
+		auto const& texture = _textures[i];
+		glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(i));
+		glBindTexture(std::get<2>(texture), std::get<1>(texture));
+		glUniform1i(glGetUniformLocation(program, std::get<0>(texture).c_str()), static_cast<GLint>(i));
+
+		std::string texture_presence_var_name = "has_" + std::get<0>(texture);
+		glUniform1i(glGetUniformLocation(program, texture_presence_var_name.c_str()), 1);
+	}
+
+	glBindVertexArray(_vao);
+	if (_has_indices)
+		glDrawElements(_drawing_mode, _indices_nb, GL_UNSIGNED_INT, reinterpret_cast<GLvoid const*>(0x0));
+	else
+		glDrawArrays(_drawing_mode, 0, _vertices_nb);
+	glBindVertexArray(0u);
+
+	for (auto const& texture : _textures) {
+		glBindTexture(std::get<2>(texture), 0);
+		glUniform1i(glGetUniformLocation(program, std::get<0>(texture).c_str()), 0);
+
+		std::string texture_presence_var_name = "has_" + std::get<0>(texture);
+		glUniform1i(glGetUniformLocation(program, texture_presence_var_name.c_str()), 0);
+	}
+
+	glUseProgram(0u);
+
+	if (utils::opengl::debug::isSupported())
+	{
+		glPopDebugGroup();
+	}
+}
+
+void
+Node::set_geometry(bonobo::mesh_data const& shape)
+{
+	_vao = shape.vao;
+	_vertices_nb = static_cast<GLsizei>(shape.vertices_nb);
+	_indices_nb = static_cast<GLsizei>(shape.indices_nb);
+	_drawing_mode = shape.drawing_mode;
+	_has_indices = shape.ibo != 0u;
+	_name = shape.name;
+
+	if (!shape.bindings.empty()) {
+		for (auto const& binding : shape.bindings)
+			add_texture(binding.first, binding.second, GL_TEXTURE_2D);
+	}
+}
+
+void
+Node::set_program(GLuint const* const program, std::function<void (GLuint)> const& set_uniforms)
+{
+	if (program == nullptr) {
+		LogError("Program can not be a null pointer; this operation will be discarded.");
+		return;
+	}
+
+	_program = program;
+	_set_uniforms = set_uniforms;
+}
+
+size_t
+Node::get_indices_nb() const
+{
+	return static_cast<size_t>(_indices_nb);
+}
+
+void
+Node::set_indices_nb(size_t const& indices_nb)
+{
+	_indices_nb = static_cast<GLsizei>(indices_nb);
+}
+
+void
+Node::add_texture(std::string const& name, GLuint tex_id, GLenum type)
+{
+	GLint max_combined_texture_image_units{-1};
+	glGetIntegerv(GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, &max_combined_texture_image_units);
+	std::size_t const max_active_texture_count
+		= (max_combined_texture_image_units > 0) ? static_cast<std::size_t>(max_combined_texture_image_units)
+		                                         : 80; // OpenGL 4.x guarantees at least 80.
+
+	if (_textures.size() >= max_active_texture_count) {
+		LogWarning("Trying to add more textures to an object than supported (%llu); the texture %s with ID %u will **not** be added. If you really need that many textures, do not use the `Node` class and roll your own solution instead.",
+		           max_active_texture_count, name.c_str(), tex_id);
+		return;
+	}
+	if (tex_id == 0u) {
+		LogWarning("0 is not a valid texture ID; the texture %s (with ID %u) will **not** be added.",
+		           name.c_str(), tex_id);
+		return;
+	}
+
+	_textures.emplace_back(name, tex_id, type);
+}
+
+void
+Node::add_child(Node const* child)
+{
+	if (child == nullptr) {
+		LogWarning("Trying to add a null pointer as child: this will be discarded.");
+		return;
+	}
+
+	_children.emplace_back(child);
+}
+
+size_t
+Node::get_children_nb() const
+{
+	return _children.size();
+}
+
+Node const*
+Node::get_child(size_t index) const
+{
+	assert(index < _children.size());
+	return _children[index];
+}
+
+TRSTransformf const&
+Node::get_transform() const
+{
+	return _transform;
+}
+
+TRSTransformf&
+Node::get_transform()
+{
+	return _transform;
+}
+
+#pragma once
+
+#include "TRSTransform.h"
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+
+#include <functional>
+#include <string>
+#include <tuple>
+#include <vector>
+
+namespace bonobo
+{
+	struct mesh_data;
+}
+
+//! \brief Represents a node of a scene graph
+class Node
+{
+public:
+	//! \brief Default constructor.
+	Node();
+
+	//! \brief Render this node.
+	//!
+	//! @param [in] view_projection Matrix transforming from world-space to clip-space
+	//! @param [in] parent_transform Matrix transforming from parent-space to
+	//!             world-space
+	void render(glm::mat4 const& view_projection,
+	            glm::mat4 const& parent_transform = glm::mat4(1.0f)) const;
+
+	//! \brief Render this node with a specific shader program.
+	//!
+	//! Note that the internal transform of this node is **not** used
+	//! during the rendering, only the |view_projection| and |world|
+	//! matrices are.
+	//!
+	//! @param [in] view_projection Matrix transforming from world-space to clip-space
+	//! @param [in] world Matrix transforming from model-space to
+	//!             world-space
+	//! @param [in] program OpenGL shader program to use
+	//! @param [in] set_uniforms function that will take as argument an
+	//!             OpenGL shader program, and will setup that program's
+	//!             uniforms
+	void render(glm::mat4 const& view_projection, glm::mat4 const& world,
+	            GLuint program,
+	            std::function<void (GLuint)> const& set_uniforms = [](GLuint /*programID*/){}) const;
+
+	//! \brief Set the geometry of this node.
+	//!
+	//! A node without any geometry will not render itself, but its
+	//! children will be rendered if they have any geometry.
+	//!
+	//! @param [in] shape OpenGL data to use as geometry
+	void set_geometry(bonobo::mesh_data const& shape);
+
+	//! \brief Get the number of indices to use.
+	//!
+	//! @return how many indices to use when rendering
+	size_t get_indices_nb() const;
+
+	//! \brief Set the number of indices to use.
+	//!
+	//! @param [in] indices_nb how many indices to use when rendering
+	void set_indices_nb(size_t const& indices_nb);
+
+	//! \brief Set the program of this node.
+	//!
+	//! A node without a program will not render itself, but its children
+	//! will be rendered if they have one.
+	//!
+	//! @param [in] pointer to the program OpenGL shader program to use;
+	//!             the pointer should not be nul.
+	//! @param [in] set_uniforms function that will take as argument an
+	//!             OpenGL shader program, and will setup that program's
+	//!             uniforms
+	void set_program(GLuint const* const program,
+	                 std::function<void (GLuint)> const& set_uniforms = [](GLuint /*programID*/){});
+
+	//! \brief Add a texture to this node.
+	//!
+	//! @param [in] name the variable name used by the attached OpenGL
+	//!                  shader program; in assignment 1, this will be
+	//!                  `diffuse_texture`
+	//! @param [in] tex_id the name of an OpenGL 2D-texture
+	//! @param [in] type the type of texture, i.e. GL_TEXTURE_2D,
+	//!                  GL_TEXTURE_CUBE_MAP, etc.
+	void add_texture(std::string const& name, GLuint tex_id, GLenum type);
+
+	//! \brief Add a child to this node.
+	//!
+	//! @param [in] child pointer to the child to add; the pointer has to
+	//!             be non-null
+	void add_child(Node const* child);
+
+	//! \brief Return the number of children to this node.
+	//!
+	//! @return the number of children
+	size_t get_children_nb() const;
+
+	//! \brief Return the ith child.
+	//!
+	//! @param [in] index the index of the child to return; index should be
+	//!             strictly less than the number of children
+	//! @return a pointer to the desired child
+	Node const* get_child(size_t index) const;
+
+	//! \brief Return this node transformation matrix.
+	//!
+	//! @return the composition of the rotation, scaling and translation
+	//!         transformations; this is the model matrix of this node
+	TRSTransformf const& get_transform() const;
+	TRSTransformf& get_transform();
+
+private:
+	// Geometry data
+	GLuint _vao;
+	GLsizei _vertices_nb;
+	GLsizei _indices_nb;
+	GLenum _drawing_mode;
+	bool _has_indices;
+
+	// Program data
+	GLuint const* _program;
+	std::function<void (GLuint)> _set_uniforms;
+
+	// Textures data
+	std::vector<std::tuple<std::string, GLuint, GLenum>> _textures;
+
+	// Transformation data
+	TRSTransformf _transform;
+
+	// Children data
+	std::vector<Node const*> _children;
+
+	// Debug data
+	std::string _name;
+};
+
+#include "Log.h"
+#include "opengl.hpp"
+#include "various.hpp"
+
+#include <cassert>
+#include <iostream>
+#include <memory>
+#include <sstream>
+
+
+namespace utils
+{
+
+namespace opengl
+{
+
+namespace debug
+{
+
+bool isSupported()
+{
+	return GLAD_GL_VERSION_4_3 || GLAD_GL_KHR_debug;
+}
+
+std::string
+getStringForType( GLenum type )
+{
+	switch (type)
+	{
+	case GL_DEBUG_TYPE_ERROR:
+		return"Error";
+	case GL_DEBUG_TYPE_DEPRECATED_BEHAVIOR:
+		return "Deprecated Behavior";
+	case GL_DEBUG_TYPE_UNDEFINED_BEHAVIOR:
+		return "Undefined Behavior";
+	case GL_DEBUG_TYPE_PORTABILITY:
+		return "Portability Issue";
+	case GL_DEBUG_TYPE_PERFORMANCE:
+		return "Performance Issue";
+	case GL_DEBUG_TYPE_MARKER:
+		return "Stream Annotation";
+	case GL_DEBUG_TYPE_PUSH_GROUP:
+		return "Push group";
+	case GL_DEBUG_TYPE_POP_GROUP:
+		return "Pop group";
+	case GL_DEBUG_TYPE_OTHER:
+		return "Other";
+	default:
+		assert(false && "Unknown OpenGL Debug Type");
+		return "";
+	}
+}
+
+std::string
+getStringForSource( GLenum source )
+{
+	switch (source)
+	{
+	case GL_DEBUG_SOURCE_API:
+		return "API";
+	case GL_DEBUG_SOURCE_WINDOW_SYSTEM:
+		return "Window System";
+	case GL_DEBUG_SOURCE_SHADER_COMPILER:
+		return "Shader Compiler";
+	case GL_DEBUG_SOURCE_THIRD_PARTY:
+		return "Third Party";
+	case GL_DEBUG_SOURCE_APPLICATION:
+		return "Application";
+	case GL_DEBUG_SOURCE_OTHER:
+		return "Other";
+	default:
+		assert(false && "Unknown OpenGL Debug Source");
+		return "";
+	}
+}
+
+std::string
+getStringForSeverity( GLenum severity )
+{
+	switch (severity)
+	{
+	case GL_DEBUG_SEVERITY_HIGH:
+		return "High";
+	case GL_DEBUG_SEVERITY_MEDIUM:
+		return "Medium";
+	case GL_DEBUG_SEVERITY_LOW:
+		return "Low";
+	case GL_DEBUG_SEVERITY_NOTIFICATION:
+		return "Notification";
+	default:
+		assert(false && "Unknown OpenGL Debug Severity");
+		return("");
+	}
+}
+
+void
+#ifdef _WIN32
+APIENTRY
+#endif
+opengl_error_callback( GLenum source, GLenum type, GLuint id, GLenum severity
+                     , GLsizei /*length*/, GLchar const* msg
+                     , void const* /*data*/
+                     )
+{
+	if (type == GL_DEBUG_TYPE_PUSH_GROUP || type == GL_DEBUG_TYPE_POP_GROUP)
+		return;
+
+	std::ostringstream oss;
+	oss << "[id: " << id << "] of type " << getStringForType(type)
+	    << ", from " << getStringForSource(source) << ":" << std::endl;
+	oss << "\t" << msg << std::endl;
+
+	auto const s_msg = oss.str();
+	auto const c_msg = s_msg.c_str();
+	switch (severity) {
+	case GL_DEBUG_SEVERITY_NOTIFICATION:
+	case GL_DEBUG_SEVERITY_LOW: // fallthrough
+		if (id == 131185) // Will use VIDEO memory
+			break;
+		else if (id == 131204) { // Texture cannot be used for texture mapping
+			// Discard if this is about the “default texture”, i.e. ID 0.
+			if (s_msg.find("The texture object (0)") != std::string::npos)
+				break;
+			else
+				LogInfo(c_msg);
+		} else
+			LogInfo(c_msg);
+		break;
+	case GL_DEBUG_SEVERITY_MEDIUM:
+		LogWarning(c_msg);
+		break;
+	case GL_DEBUG_SEVERITY_HIGH:
+		LogError(c_msg);
+		break;
+	}
+}
+
+} // end of namespace debug
+
+namespace shader
+{
+
+bool
+source_and_build_shader(GLuint id, std::string const& source)
+{
+	assert(id > 0u && !source.empty());
+
+	GLchar const* char_source = source.c_str();
+	glShaderSource(id, 1, &char_source, NULL);
+
+	glCompileShader(id);
+	GLint state = GLint(0);
+	glGetShaderiv(id, GL_COMPILE_STATUS, &state);
+	if (state == GL_FALSE)
+	{
+		GLint log_length = GLint(0);
+		glGetShaderiv(id, GL_INFO_LOG_LENGTH, &log_length);
+
+		if (log_length > 0) {
+			std::unique_ptr<GLchar[]> log = std::make_unique<GLchar[]>(static_cast<size_t>(log_length));
+			glGetShaderInfoLog(id, log_length, NULL, log.get());
+			std::ostringstream oss;
+			oss << "Shader compiling error:" << std::endl
+			    << log.get();
+			auto const s_msg = oss.str();
+			auto const c_msg = s_msg.c_str();
+			LogError("%s", c_msg);
+		} else {
+			LogError("Shader failed to compile but no log available.");
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
+GLuint
+generate_shader(GLenum type, std::string const& source)
+{
+	GLuint id = glCreateShader(type);
+
+	auto const success = source_and_build_shader(id, source);
+	if (success) {
+		return id;
+	} else {
+		glDeleteShader(id);
+		return 0u;
+	}
+}
+
+bool
+link_program(GLuint id)
+{
+	glLinkProgram(id);
+	GLint state = GLint(0);
+	glGetProgramiv(id, GL_LINK_STATUS, &state);
+	if (state == GL_FALSE)
+	{
+		GLint log_length = GLint(0);
+		glGetProgramiv(id, GL_INFO_LOG_LENGTH, &log_length);
+		std::unique_ptr<GLchar[]> log = std::make_unique<GLchar[]>(static_cast<size_t>(log_length));
+		glGetProgramInfoLog(id, log_length, NULL, log.get());
+		std::ostringstream oss;
+		oss << "Program linking error:" << std::endl
+		    << log.get();
+		auto const s_msg = oss.str();
+		auto const c_msg = s_msg.c_str();
+		LogError("%s", c_msg);
+
+		return false;
+	}
+
+	return true;
+}
+
+void
+reload_program(GLuint id, std::vector<GLuint> const& ids, std::vector<std::string> const& sources)
+{
+	for (unsigned int i = 0u; i < ids.size(); ++i)
+		source_and_build_shader(ids[i], sources[i]);
+
+	link_program(id);
+}
+
+GLuint
+generate_program(std::vector<GLuint> const& shaders_id)
+{
+	GLuint id = glCreateProgram();
+
+	for (auto shader_id : shaders_id)
+		glAttachShader(id, shader_id);
+
+	auto const success = link_program(id);
+	if (success) {
+		return id;
+	} else {
+		glDeleteProgram(id);
+		return 0u;
+	}
+}
+
+} // end of namespace shader
+
+namespace fullscreen
+{
+
+static auto vao_id = GLuint(0u);
+static auto vbo_id = GLuint(0u);
+static auto program_id = GLuint(0u);
+static auto texture_id = GLuint(0u);
+
+void
+init(std::string const& vs_path, std::string const& fs_path, size_t width, size_t height)
+{
+	assert(vao_id == 0u && vbo_id == 0u && program_id == 0u && texture_id == 0u);
+
+	glGenVertexArrays(1, &vao_id);
+	assert(vao_id != 0u);
+	glBindVertexArray(vao_id);
+
+	glGenBuffers(1, &vbo_id);
+	assert(vbo_id != 0u);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo_id);
+
+	GLfloat const vertices[4 * 2] =
+	{
+		-1.0f, -1.0f,
+		 1.0f ,-1.0f,
+		-1.0f,  1.0f,
+		 1.0f,  1.0f
+	};
+	glBufferData(GL_ARRAY_BUFFER, 4 * 2 * sizeof(GLfloat), vertices, GL_STATIC_DRAW);
+
+	auto const vs = shader::generate_shader(GL_VERTEX_SHADER,utils::slurp_file(vs_path));
+	auto const fs = shader::generate_shader(GL_FRAGMENT_SHADER,utils::slurp_file(fs_path));
+	program_id = shader::generate_program({ vs, fs });
+	glDeleteShader(vs);
+	glDeleteShader(fs);
+
+	GLint const location = glGetAttribLocation(program_id, "vertex");
+	assert(location >= 0);
+	glVertexAttribPointer(static_cast<GLuint>(location), 2, GL_FLOAT, GL_FALSE, 0, reinterpret_cast<GLvoid const*>(0x0));
+	glEnableVertexAttribArray(static_cast<GLuint>(location));
+
+	glUseProgram(program_id);
+
+	glActiveTexture(GL_TEXTURE0);
+	glGenTextures(1, &texture_id);
+	assert(texture_id != 0u);
+	glBindTexture(GL_TEXTURE_2D, texture_id);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, static_cast<GLsizei>(width), static_cast<GLsizei>(height), 0, GL_RGBA, GL_FLOAT, nullptr);
+}
+
+void
+deinit()
+{
+	assert(vao_id != 0u && vbo_id != 0u && program_id != 0u && texture_id != 0u);
+
+	GLint param = 0;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &param);
+	if (static_cast<GLuint>(param) == texture_id)
+		glBindTexture(GL_TEXTURE_2D, 0u);
+	glDeleteTextures(1, &texture_id);
+	texture_id = 0u;
+
+	GLint const location = glGetAttribLocation(program_id, "vertex");
+	assert(location >= 0);
+	glDisableVertexAttribArray(static_cast<GLuint>(location));
+
+	glGetIntegerv(GL_CURRENT_PROGRAM, &param);
+	if (static_cast<GLuint>(param) == program_id)
+		glUseProgram(0u);
+	glDeleteProgram(program_id);
+	program_id = 0u;
+
+	glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &param);
+	if (static_cast<GLuint>(param) == vbo_id)
+		glBindBuffer(GL_ARRAY_BUFFER, 0u);
+	glDeleteBuffers(1, &vbo_id);
+	vbo_id = 0u;
+
+	glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &param);
+	if (static_cast<GLuint>(param) == vao_id)
+		glBindVertexArray(0u);
+	glDeleteVertexArrays(1, &vao_id);
+	vao_id = 0u;
+}
+
+GLuint
+get_texture_id()
+{
+	return texture_id;
+}
+
+void
+draw()
+{
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+} // end of namespace fullscreen
+
+} // end of namespace opengl
+
+} // end of namespace utils
+
+#pragma once
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
+#include <string>
+#include <vector>
+
+
+namespace utils
+{
+
+namespace opengl
+{
+
+namespace debug
+{
+
+bool isSupported();
+std::string getStringForType(GLenum type);
+std::string getStringForSource(GLenum source);
+std::string getStringForSeverity(GLenum severity);
+void
+#ifdef _WIN32
+APIENTRY
+#endif
+opengl_error_callback( GLenum source, GLenum type, GLuint id
+                     , GLenum severity, GLsizei /*length*/
+                     , GLchar const* msg, void const* /*data*/
+                     );
+
+} // end of namespace debug
+
+namespace shader
+{
+
+bool source_and_build_shader(GLuint id, std::string const& source);
+GLuint generate_shader(GLenum type, std::string const& source);
+bool link_program(GLuint id);
+void reload_program(GLuint id, std::vector<GLuint> const& ids, std::vector<std::string> const& sources);
+GLuint generate_program(std::vector<GLuint> const& shaders_id);
+
+} // end of namespace shader
+
+namespace fullscreen
+{
+
+void init(std::string const& vs_path, std::string const& fs_path, size_t width, size_t height);
+void deinit();
+void draw();
+GLuint get_texture_id();
+
+} // end of namespace fullscreen
+
+} // end of namespace opengl
+
+} // end of namespace utils
+
+#include "ShaderProgramManager.hpp"
+
+#include "config.hpp"
+
+#include "Log.h"
+#include "opengl.hpp"
+#include "various.hpp"
+
+#include <imgui.h>
+
+#include <type_traits>
+
+ShaderProgramManager::~ShaderProgramManager()
+{
+	for (auto const& i : program_entries) {
+		if (i.first != 0u) {
+			glDeleteProgram(i.first);
+			i.first = 0u;
+		}
+	}
+}
+
+void ShaderProgramManager::CreateAndRegisterProgram(char const* const program_name, ProgramData const& program_data, GLuint& program)
+{
+	if (!GLAD_GL_ARB_compute_shader) {
+		for (auto const& i : program_data) {
+			if (i.first == ShaderType::compute) {
+				LogError("Compute shaders aren't exposed on your computer (needed for shader '%s'.", i.second.c_str());
+				return;
+			}
+		}
+	}
+
+	program_entries.emplace_back(program, program_data);
+	program_names.emplace_back(program_name);
+
+	ProcessProgram(program_entries.size() - 1);
+}
+
+void ShaderProgramManager::CreateAndRegisterComputeProgram(char const* const program_name, std::string const& filename, GLuint& program)
+{
+	if (!GLAD_GL_ARB_compute_shader) {
+		LogError("Compute shaders aren't exposed on your computer (needed for shader '%s'.", filename.c_str());
+		return;
+	}
+
+	program_entries.emplace_back(program, ProgramData{ { ShaderType::compute, filename } });
+	program_names.emplace_back(program_name);
+
+	ProcessProgram(program_entries.size() - 1);
+}
+
+bool ShaderProgramManager::ReloadAllPrograms()
+{
+	bool encountered_failures = false;
+	for (std::size_t i = 0; i < program_entries.size(); ++i) {
+		auto& program = program_entries[i].first;
+		if (program != 0u)
+			glDeleteProgram(program);
+		program = 0u;
+		ProcessProgram(i);
+		encountered_failures |= program == 0u;
+	}
+
+	return !encountered_failures;
+}
+
+ShaderProgramManager::SelectedProgram ShaderProgramManager::SelectProgram(std::string const& label, std::int32_t& program_index)
+{
+	SelectedProgram selection_result;
+	if (program_index >= program_entries.size()) {
+		LogError("Invalid program index '%d': only %d programs are registered.", program_index, program_entries.size());
+		return selection_result;
+	}
+
+	selection_result.was_selection_changed = ImGui::Combo(label.c_str(), &program_index, program_names.data(), program_names.size());
+	selection_result.program = &program_entries.at(program_index).first;
+	selection_result.name = program_names.at(program_index);
+	return selection_result;
+}
+
+void ShaderProgramManager::ProcessProgram(std::size_t const program_index)
+{
+	auto& program_entry = program_entries[program_index];
+	auto& program = program_entry.first;
+	auto const& program_data = program_entry.second;
+
+	std::vector<GLuint> shaders;
+	shaders.reserve(program_data.size());
+
+	for (auto const& i : program_data) {
+		std::string const full_filename = config::shaders_path(i.second);
+		auto const shader_source = utils::slurp_file(full_filename);
+		if (shader_source.empty()) {
+			LogError("Retrieval of shader '%s' failed; see previous message for details.", full_filename.c_str());
+			return;
+		}
+
+		GLuint shader = utils::opengl::shader::generate_shader(static_cast<std::underlying_type<ShaderType>::type>(i.first), shader_source);
+		if (shader == 0u) {
+			for (auto& shader : shaders)
+				glDeleteShader(shader);
+			LogError("Compilation of shader '%s' failed; see previous message for details.", full_filename.c_str());
+			return;
+		}
+		shaders.push_back(shader);
+	}
+
+	program = utils::opengl::shader::generate_program(shaders);
+	if (utils::opengl::debug::isSupported())
+	{
+		auto const& program_name = program_names[program_index];
+		glObjectLabel(GL_PROGRAM, program, strlen(program_name), program_name);
+	}
+
+	for (auto& shader : shaders)
+		glDeleteShader(shader);
+}
+
+#pragma once
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <cstdint>
+
+enum class ShaderType : std::uint32_t {
+	vertex = GL_VERTEX_SHADER,
+	tess_eval = GL_TESS_EVALUATION_SHADER,
+	tess_ctrl = GL_TESS_CONTROL_SHADER,
+	geometry = GL_GEOMETRY_SHADER,
+	fragment = GL_FRAGMENT_SHADER,
+	compute = GL_COMPUTE_SHADER
+};
+
+class ShaderProgramManager
+{
+public:
+	using ProgramData = std::map<ShaderType, std::string>;
+	struct SelectedProgram {
+		bool was_selection_changed = false;
+		GLuint const* program = nullptr;
+		char const* name = nullptr;
+	};
+	~ShaderProgramManager();
+	void CreateAndRegisterProgram(char const* const program_name, ProgramData const& program_data, GLuint& program);
+	void CreateAndRegisterComputeProgram(char const* const program_name, std::string const& filename, GLuint& program);
+	bool ReloadAllPrograms();
+	SelectedProgram SelectProgram(std::string const& label, std::int32_t& program_index);
+
+private:
+	void ProcessProgram(std::size_t program_index);
+	using ProgramEntry = std::pair<GLuint&, ProgramData>;
+	std::vector<ProgramEntry> program_entries;
+	std::vector<char const*> program_names;
+};
+
+#define STBI_WINDOWS_UTF8
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
+#pragma once
+
+#include <glm/glm.hpp>
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/io.hpp>
+
+#include <iostream>
+
+/**
+ * A TRS-transform M is composed of rotation, translation and scale. We define
+ * M as:
+ *
+ *    M = T * R * S
+ *
+ * Transformations can be used hierarchically. This means that every transformable child
+ * node will inherit the transformations of its parent. Let's say for instance,
+ * that there are two nodes A and B. A is the parent of B and both are
+ * transformable. The local transformation of A is denoted Ma and for B its Ma.
+ * The matrix that brings nodes A and B to world space is denoted Wa and Wa.
+ * The resulting transformations for the nodes will then be:
+ *
+ *    Ma = Ta * Ra * Sa
+ *    Mb = Tb * Rb * Sb
+ *
+ *    Wa = Ma = Ta * Ra * Sa
+ *    Wb = Ma * Mb = (Ta * Ra * Sa) * (Ta * Rb * Sb)
+ *
+ * The MB matrix will then, in turn, be recursively be applied to any children
+ * of node B to construct new model->world matrices, in the same manner as in
+ * the example above.
+ *
+ */
+template<typename T, glm::precision P>
+class TRSTransform {
+
+public:
+	TRSTransform();
+	~TRSTransform();
+
+public:
+	/* Reset the transformation to the identity matrix */
+	void ResetTransform();
+
+		/* Relative transformations */
+
+	void Translate(glm::tvec3<T, P> v);
+	void Scale(glm::tvec3<T, P> v);
+	void Scale(T uniform);
+
+	/* Rotate around vector (x, y, z) */
+	void Rotate(T angle, glm::tvec3<T, P> v);
+	void RotateX(T angle);
+	void RotateY(T angle);
+	void RotateZ(T angle);
+	void PreRotate(T angle, glm::tvec3<T, P> v);
+	void PreRotateX(T angle);
+	void PreRotateY(T angle);
+	void PreRotateZ(T angle);
+
+		/* Absolute transformations */
+
+	void SetTranslate(glm::tvec3<T, P> v);
+	void SetScale(glm::tvec3<T, P> v);
+	void SetScale(T uniform);
+
+	/* Rotate around vector (x, y, z) */
+	void SetRotate(T angle, glm::tvec3<T, P> v);
+	void SetRotateX(T angle);
+	void SetRotateY(T angle);
+	void SetRotateZ(T angle);
+
+
+	void LookTowards(glm::tvec3<T, P> front_vec, glm::tvec3<T, P> up_vec);
+	void LookTowards(glm::tvec3<T, P> front_vec);
+	void LookAt(glm::tvec3<T, P> point, glm::tvec3<T, P> up_vec);
+	void LookAt(glm::tvec3<T, P> point);
+
+		/* Useful getters */
+
+	glm::tmat4x4<T, P> GetMatrix() const;
+	glm::tmat4x4<T, P> GetMatrixInverse() const;
+
+	glm::tmat3x3<T, P> GetRotation() const;
+	glm::tvec3<T, P> GetTranslation() const;
+	glm::tvec3<T, P> GetScale() const;
+
+	glm::tmat4x4<T, P> GetTranslationMatrix() const;
+	glm::tmat4x4<T, P> GetRotationMatrix() const;
+	glm::tmat4x4<T, P> GetScaleMatrix() const;
+
+	glm::tmat4x4<T, P> GetTranslationMatrixInverse() const;
+	glm::tmat4x4<T, P> GetRotationMatrixInverse() const;
+	glm::tmat4x4<T, P> GetScaleMatrixInverse() const;
+
+	glm::tmat4x4<T, P> GetTranslationRotationMatrix() const;
+
+	glm::tvec3<T, P> GetUp() const;
+	glm::tvec3<T, P> GetDown() const;
+	glm::tvec3<T, P> GetLeft() const;
+	glm::tvec3<T, P> GetRight() const;
+	glm::tvec3<T, P> GetFront() const;
+	glm::tvec3<T, P> GetBack() const;
+
+protected:
+	glm::tmat3x3<T, P>	mR;
+	glm::tvec3<T, P>	mT;
+	glm::tvec3<T, P>	mS;
+
+public:
+	friend std::ostream &operator<<(std::ostream &os, TRSTransform<T, P> &v)
+	{
+		os << v.mT << std::endl;
+		os << v.mR << std::endl;
+		os << v.mS << std::endl;
+		return os;
+	}
+	friend std::istream &operator>>(std::istream &is, TRSTransform<T, P> &v)
+	{
+		is >> v.mT;
+		is >> v.mR;
+		is >> v.mS;
+		return is;
+	}
+};
+
+#include "TRSTransform.inl"
+
+using TRSTransformf = TRSTransform<float, glm::defaultp>;
+using TRSTransformd = TRSTransform<double, glm::defaultp>;
+
+#include <cmath>
+#include "TRSTransform.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+TRSTransform<T, P>::TRSTransform()
+{
+	ResetTransform();
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+TRSTransform<T, P>::~TRSTransform()
+{
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::ResetTransform()
+{
+	mT = glm::tvec3<T, P>(static_cast<T>(0));
+	mS = glm::tvec3<T, P>(static_cast<T>(1));
+	mR = glm::tmat3x3<T, P>(static_cast<T>(1));
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::Translate(glm::tvec3<T, P> v)
+{
+	mT += v;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::Scale(glm::tvec3<T, P> v)
+{
+	mS *= v;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::Scale(T uniform)
+{
+	mS *= uniform;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::Rotate(T angle, glm::tvec3<T, P> v)
+{
+	mR = glm::tmat3x3<T, P>(glm::rotate(glm::tmat4x4<T, P>(mR), angle, v));
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::RotateX(T angle)
+{
+	T C = std::cos(angle);
+	T S = std::sin(angle);
+	mR = glm::tmat3x3<T, P>(
+		mR[0][0], C * mR[0][1] - mR[0][2] * S, C * mR[0][2] + mR[0][1] * S,
+		mR[1][0], C * mR[1][1] - mR[1][2] * S, C * mR[1][2] + mR[1][1] * S,
+		mR[2][0], C * mR[2][1] - mR[2][2] * S, C * mR[2][2] + mR[2][1] * S);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::RotateY(T angle)
+{
+	T C = std::cos(angle);
+	T S = std::sin(angle);
+	mR = glm::tmat3x3<T, P>(
+		C * mR[0][0] + mR[0][2] * S, mR[0][1], C * mR[0][2] - mR[0][0] * S,
+		C * mR[1][0] + mR[1][2] * S, mR[1][1], C * mR[1][2] - mR[1][0] * S,
+		C * mR[2][0] + mR[2][2] * S, mR[2][1], C * mR[2][2] - mR[2][0] * S);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::RotateZ(T angle)
+{
+	T C = std::cos(angle);
+	T S = std::sin(angle);
+	mR = glm::tmat3x3<T, P>(
+		C * mR[0][0] - mR[0][1] * S, C * mR[0][1] + mR[0][0] * S, mR[0][2],
+		C * mR[1][0] - mR[1][1] * S, C * mR[1][1] + mR[1][0] * S, mR[1][2],
+		C * mR[2][0] - mR[2][1] * S, C * mR[2][1] + mR[2][0] * S, mR[2][2]);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::PreRotate(T angle, glm::tvec3<T, P> v)
+{
+	mR = glm::tmat3x3<T, P>::RotationMatrix(angle, v) * mR;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::PreRotateX(T angle)
+{
+	T C = cos(angle);
+	T S = sin(angle);
+	mR = glm::tmat3x3<T, P>(
+		mR[0][0], mR[0][1], mR[0][2],
+		C * mR[1][0] + mR[2][0] * S, C * mR[1][1] + mR[2][1] * S, C * mR[1][2] + mR[2][2] * S,
+		C * mR[2][0] - mR[1][0] * S, C * mR[2][1] - mR[1][1] * S, C * mR[2][2] - mR[1][2] * S);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::PreRotateY(T angle)
+{
+	T C = cos(angle);
+	T S = sin(angle);
+	mR = glm::tmat3x3<T, P>(
+		C * mR[0][0] - mR[2][0] * S, C * mR[0][1] - mR[2][1] * S, C * mR[0][2] - mR[2][2] * S,
+		mR[1][0], mR[1][1], mR[1][2],
+		C * mR[2][0] + mR[0][0] * S, C * mR[2][1] + mR[0][1] * S, C * mR[2][2] + mR[0][2] * S);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::PreRotateZ(T angle)
+{
+	T C = cos(angle);
+	T S = sin(angle);
+	mR = glm::tmat3x3<T, P>(
+		C * mR[0][0] + mR[1][0] * S, C * mR[0][1] + mR[1][1] * S, C * mR[0][2] + mR[1][2] * S,
+		C * mR[1][0] - mR[0][0] * S, C * mR[1][1] - mR[0][1] * S, C * mR[1][2] - mR[0][2] * S,
+		mR[2][0], mR[2][1], mR[2][2]);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::SetTranslate(glm::tvec3<T, P> v)
+{
+	mT = v;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::SetScale(glm::tvec3<T, P> v)
+{
+	mS = v;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::SetScale(T uniform)
+{
+	mS = glm::tvec3<T, P>(uniform);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::SetRotate(T angle, glm::tvec3<T, P> v)
+{
+	mR = glm::tmat3x3<T, P>(glm::rotate(glm::tmat4x4<T, P>(T(1)), angle, v));
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::SetRotateX(T angle)
+{
+	mR = glm::tmat3x3<T, P>(glm::rotate(glm::tmat4x4<T, P>(T(1)), angle, glm::tvec3<T, P>(1, 0, 0)));
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::SetRotateY(T angle)
+{
+	mR = glm::tmat3x3<T, P>(glm::rotate(glm::tmat4x4<T, P>(T(1)), angle, glm::tvec3<T, P>(0, 1, 0)));
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::SetRotateZ(T angle)
+{
+	mR = glm::tmat3x3<T, P>(glm::rotate(glm::tmat4x4<T, P>(T(1)), angle, glm::tvec3<T, P>(0, 0, 1)));
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::LookTowards(glm::tvec3<T, P> front_vec, glm::tvec3<T, P> up_vec)
+{
+	front_vec = normalize(front_vec);
+	up_vec = normalize(up_vec);
+
+	if (std::abs(dot(up_vec, front_vec)) > 0.99999f)
+		return;
+
+	glm::tvec3<T, P> prev_up = up_vec;
+
+	glm::tvec3<T, P> right = cross(front_vec, prev_up);
+	glm::tvec3<T, P> up = cross(right, front_vec);
+
+	right = normalize(right);
+	up = normalize(up);
+
+	mR[0] = right;
+	mR[1] = up;
+	mR[2] = -front_vec;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::LookTowards(glm::tvec3<T, P> front_vec)
+{
+	LookTowards(front_vec, glm::tvec3<T, P>(0, 1, 0));
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::LookAt(glm::tvec3<T, P> point, glm::tvec3<T, P> up_vec)
+{
+	LookTowards(point - mT, up_vec);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+void TRSTransform<T, P>::LookAt(glm::tvec3<T, P> point)
+{
+	LookTowards(point - mT);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetTranslationMatrix() const
+{
+	return glm::tmat4x4<T, P>(
+			1, 0, 0, 0,
+			0, 1, 0, 0,
+			0, 0, 1, 0,
+			mT.x, mT.y, mT.z, 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetRotationMatrix() const
+{
+	return glm::tmat4x4<T, P>(
+			mR[0][0], mR[0][1], mR[0][2], 0,
+			mR[1][0], mR[1][1], mR[1][2], 0,
+			mR[2][0], mR[2][1], mR[2][2], 0,
+			0  , 0  , 0  , 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetScaleMatrix() const
+{
+	return glm::tmat4x4<T, P>(
+			mS.x, 0  , 0  , 0,
+			0  , mS.y, 0  , 0,
+			0  , 0  , mS.z, 0,
+			0  , 0  , 0  , 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetTranslationMatrixInverse() const
+{
+	return glm::tmat4x4<T, P>(
+			1, 0, 0, 0,
+			0, 1, 0, 0,
+			0, 0, 1, 0,
+			-mT.x, -mT.y, -mT.z, 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetRotationMatrixInverse() const
+{
+	return glm::tmat4x4<T, P>(
+			mR[0][0], mR[1][0], mR[2][0], 0,
+			mR[0][1], mR[1][1], mR[2][1], 0,
+			mR[0][2], mR[1][2], mR[2][2], 0,
+			0, 0, 0, 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetScaleMatrixInverse() const
+{
+	return glm::tmat4x4<T, P>(
+			T(1)/mS.x, 0, 0, 0,
+			0, T(1)/mS.y, 0, 0,
+			0, 0, T(1)/mS.z, 0,
+			0, 0, 0, 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetTranslationRotationMatrix() const
+{
+	return glm::tmat4x4<T, P>(
+			mR[0][0], mR[0][1], mR[0][2], 0,
+			mR[1][0], mR[1][1], mR[1][2], 0,
+			mR[2][0], mR[2][1], mR[2][2], 0,
+			mT.x, mT.y, mT.z, 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetMatrix() const
+{
+	return glm::tmat4x4<T, P>(
+			mR[0][0]*mS.x, mR[0][1]*mS.x, mR[0][2]*mS.x, 0,
+			mR[1][0]*mS.y, mR[1][1]*mS.y, mR[1][2]*mS.y, 0,
+			mR[2][0]*mS.z, mR[2][1]*mS.z, mR[2][2]*mS.z, 0,
+			mT.x, mT.y, mT.z, 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat4x4<T, P> TRSTransform<T, P>::GetMatrixInverse() const
+{
+	glm::tvec3<T, P> X = glm::tvec3<T, P>(T(1) / mS.x, T(1) / mS.y, T(1) / mS.z);
+
+	T a = mR[0][0] * X.x;
+	T b = mR[1][0] * X.y;
+	T c = mR[2][0] * X.z;
+	T d = mR[0][1] * X.x;
+	T e = mR[1][1] * X.y;
+	T f = mR[2][1] * X.z;
+	T g = mR[0][2] * X.x;
+	T h = mR[1][2] * X.y;
+	T i = mR[2][2] * X.z;
+
+	return glm::tmat4x4<T, P>(
+			a, b, c, 0,
+			d, e, f, 0,
+			g, h, i, 0,
+			-(mT.x * a + mT.y * d + mT.z * g), -(mT.x * b + mT.y * e + mT.z * h), -(mT.x * c + mT.y * f + mT.z * i), 1);
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tmat3x3<T, P> TRSTransform<T, P>::GetRotation() const
+{
+	return mR;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetTranslation() const
+{
+	return mT;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetScale() const
+{
+	return mS;
+}
+
+/*----------------------------------------------------------------------------*/
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetUp() const
+{
+	return glm::tvec3<T, P>(mR[1][0]*mS.y, mR[1][1]*mS.y, mR[1][2]*mS.y);
+}
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetDown() const
+{
+	return -GetUp();
+}
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetLeft() const
+{
+	return -GetRight();
+}
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetRight() const
+{
+	return glm::tvec3<T, P>(mR[0][0]*mS.x, mR[0][1]*mS.x, mR[0][2]*mS.x);
+}
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetFront() const
+{
+	return -GetBack();
+}
+
+template<typename T, glm::precision P>
+glm::tvec3<T, P> TRSTransform<T, P>::GetBack() const
+{
+	return glm::tvec3<T, P>(mR[2][0]*mS.z, mR[2][1]*mS.z, mR[2][2]*mS.z);
+}
+
+/*----------------------------------------------------------------------------*/
+
+#include "various.hpp"
+
+#include "core/Log.h"
+
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <memory>
+#if defined(_WIN32)
+#include <Windows.h>
+#endif
+
+#if defined(_WIN32)
+// Implementation based on this article by Giovanni Dicanio:
+// https://docs.microsoft.com/en-us/archive/msdn-magazine/2016/september/c-unicode-encoding-conversions-with-stl-strings-and-win32-apis
+
+std::wstring
+utils::widen(char const* utf8)
+{
+	std::wstring utf16;
+	if (!utf8 || utf8[0] == '\0') {
+		return utf16;
+	}
+
+	int const utf16_length = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, nullptr, 0);
+	if (utf16_length == 0) {
+		LogError("Failed to retrieve the length of the resulting UTF-16 string; MultiByteToWideChar generated the error code %d.", ::GetLastError());
+		return utf16;
+	}
+	utf16.resize(utf16_length);
+
+	int const result = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8, -1, &utf16[0], utf16_length);
+	if (result == 0) {
+		LogError("Conversion from UTF-8 to UTF-16 failed; MultiByteToWideChar generated the error code %d.", ::GetLastError());
+		return utf16;
+	}
+
+	return utf16;
+}
+
+std::wstring
+utils::widen(std::string const& utf8)
+{
+	std::wstring utf16;
+	if (utf8.empty()) {
+		return utf16;
+	}
+
+	if (utf8.length() > static_cast<size_t>((std::numeric_limits<int>::max)())) {
+		LogError("The length of \"%s\" is too long to fit in an int, which is needed for the conversion to UTF-16.", utf8.c_str());
+		return utf16;
+	}
+	int const utf8_length = static_cast<int>(utf8.length());
+
+	int const utf16_length = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), utf8_length, nullptr, 0);
+	if (utf16_length == 0) {
+		LogError("Failed to retrieve the length of the resulting UTF-16 string; MultiByteToWideChar generated the error code %d.", ::GetLastError());
+		return utf16;
+	}
+	utf16.resize(utf16_length);
+
+	int const result = ::MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, utf8.data(), utf8_length, &utf16[0], utf16_length);
+	if (result == 0) {
+		LogError("Conversion from UTF-8 to UTF-16 failed; MultiByteToWideChar generated the error code %d.", ::GetLastError());
+		return utf16;
+	}
+
+	return utf16;
+}
+#endif
+
+std::string
+utils::slurp_file(std::string const& path)
+{
+  std::ifstream file = std::ifstream(utils::widen(path));
+  if (!file.is_open()) {
+    LogError("Failed to open \"%s\"", path.c_str());
+    return std::string("");
+  }
+
+  file.seekg(0, std::ios::end);
+  auto const size = file.tellg();
+  file.seekg(0, std::ios::beg);
+
+  std::unique_ptr<char[]> content = std::make_unique<char[]>(static_cast<size_t>(size) + 1ll);
+  file.read(content.get(), size);
+  content[static_cast<size_t>(size)] = '\0';
+
+  return std::string(content.get());
+}
+
+#pragma once
+
+
+#include <string>
+
+
+namespace utils
+{
+
+#if defined(_WIN32)
+std::wstring widen(char const* utf8);
+std::wstring widen(std::string const& utf8);
+#else
+inline char const* widen(char const* utf8) { return utf8; }
+inline std::string const& widen(std::string const& utf8) { return utf8; }
+#endif
+
+std::string slurp_file(std::string const& path);
+
+} // end of namespace
+
+#include "WindowManager.hpp"
+
+#include "Log.h"
+#include "opengl.hpp"
+
+#include <glad/glad.h>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
+
+namespace
+{
+	const int default_opengl_major_version = 4;
+	const int default_opengl_minor_version = 1;
+	const int default_glsl_version = default_opengl_major_version * 100 + default_opengl_minor_version * 10;
+
+	void ErrorCallback(int error, char const* description)
+	{
+		if (error == 65543 || error == 65545)
+			LogError("Couldn't create an OpenGL %d.%d context.\nIf you are using old hardware/drivers which support OpenGL 3.3 but not higher, try using the 'OpenGL_3.3' branch.", default_opengl_major_version, default_opengl_minor_version);
+		else
+			LogError("GLFW error %d was thrown:\n\t%s\n", error, description);
+	}
+
+	void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+	{
+		WindowManager::WindowDatum* const instance = static_cast<WindowManager::WindowDatum*>(glfwGetWindowUserPointer(window));
+		instance->input_handler.FeedKeyboard(key, scancode, action);
+
+#ifdef _WIN32
+		bool should_close = (key == GLFW_KEY_F4) && (mods == GLFW_MOD_ALT);
+#elif defined __APPLE__
+		bool should_close = (key == GLFW_KEY_Q) && (mods == GLFW_MOD_SUPER);
+#elif defined __linux__
+		bool should_close = (key == GLFW_KEY_Q) && (mods == GLFW_MOD_CONTROL);
+#else
+		bool should_close = false;
+#endif
+		should_close |= (key == GLFW_KEY_ESCAPE);
+		if (should_close)
+			glfwSetWindowShouldClose(window, true);
+
+		ImGui_ImplGlfw_KeyCallback(window, key, scancode, action, mods);
+	}
+
+	void MouseCallback(GLFWwindow* window, int button, int action, int mods)
+	{
+		WindowManager::WindowDatum* const instance = static_cast<WindowManager::WindowDatum*>(glfwGetWindowUserPointer(window));
+		instance->input_handler.FeedMouseButtons(button, action);
+	}
+
+	void CursorCallback(GLFWwindow* window, double x, double y)
+	{
+		WindowManager::WindowDatum* const instance = static_cast<WindowManager::WindowDatum*>(glfwGetWindowUserPointer(window));
+		instance->input_handler.FeedMouseMotion(glm::vec2(x, y));
+	}
+
+	void FramebufferSizeCallback(GLFWwindow* window, int width, int height)
+	{
+		if (width <= 0 || height <= 0)
+			return;
+
+		WindowManager::WindowDatum* const instance = static_cast<WindowManager::WindowDatum*>(glfwGetWindowUserPointer(window));
+		instance->camera.SetAspect(static_cast<float>(width) / static_cast<float>(height));
+	}
+} // anonymous namespace
+
+std::mutex WindowManager::mMutex;
+
+WindowManager::WindowManager()
+{
+	bool const is_first_instance = WindowManager::mMutex.try_lock();
+	if (!is_first_instance)
+		throw std::runtime_error("[WindowManager] Only one instance of WindowManager can exist at any given point.");
+
+	glfwSetErrorCallback(ErrorCallback);
+
+	int const init_res = glfwInit();
+	if (init_res == GLFW_FALSE) {
+		WindowManager::mMutex.unlock();
+		throw std::runtime_error("[GLFW] Initialisation failure.");
+	}
+}
+
+WindowManager::~WindowManager()
+{
+	glfwTerminate();
+	WindowManager::mMutex.unlock();
+}
+
+GLFWwindow* WindowManager::CreateGLFWWindow(std::string const& title, WindowDatum const& data, unsigned int msaa, bool fullscreen, bool resizable, SwapStrategy swap)
+{
+#ifdef __APPLE__
+	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
+	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, default_opengl_major_version);
+	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, default_opengl_minor_version);
+
+	glfwWindowHint(GLFW_RESIZABLE, resizable ? GLFW_TRUE : GLFW_FALSE);
+	glfwWindowHint(GLFW_SAMPLES, static_cast<int>(msaa));
+
+	GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
+	GLFWvidmode const* const video_mode = glfwGetVideoMode(monitor);
+	int width  = fullscreen ? data.fullscreen_width  : data.windowed_width;
+	int height = fullscreen ? data.fullscreen_height : data.windowed_height;
+	if (width == 0)
+		width = video_mode->width;
+	if (height == 0)
+		height = video_mode->height;
+
+	glfwWindowHint(GLFW_RED_BITS, video_mode->redBits);
+	glfwWindowHint(GLFW_GREEN_BITS, video_mode->greenBits);
+	glfwWindowHint(GLFW_BLUE_BITS, video_mode->blueBits);
+	glfwWindowHint(GLFW_REFRESH_RATE, video_mode->refreshRate);
+
+	GLFWwindow* window = glfwCreateWindow(width, height, title.c_str(), fullscreen ? monitor : nullptr, nullptr);
+
+	if (window == nullptr)
+		return nullptr;
+
+	glfwMakeContextCurrent(window);
+
+	if (!gladLoadGLLoader(reinterpret_cast<GLADloadproc>(glfwGetProcAddress))) {
+		LogError("[GLAD]: Failed to initialise OpenGL context.");
+		return nullptr;
+	}
+
+	// Setup Dear ImGui context
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+
+	// Setup Dear ImGui style
+	ImGui::StyleColorsDark();
+
+	// Setup Platform/Renderer bindings
+	ImGui_ImplGlfw_InitForOpenGL(window, true);
+	char glsl_version_directive[13];
+	std::snprintf(glsl_version_directive, 13, "#version %d%d0", default_opengl_major_version, default_opengl_minor_version);
+	ImGui_ImplOpenGL3_Init(glsl_version_directive);
+
+	glfwSetKeyCallback(window, KeyCallback);
+	glfwSetInputMode(window, GLFW_STICKY_KEYS, 1);
+	glfwSetMouseButtonCallback(window, MouseCallback);
+	glfwSetCursorPosCallback(window, CursorCallback);
+	glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
+	glfwSetWindowUserPointer(window, static_cast<void*>(this));
+
+	glfwSetScrollCallback(window, ImGui_ImplGlfw_ScrollCallback);
+	glfwSetCharCallback(window, ImGui_ImplGlfw_CharCallback);
+
+	GLint context_flags = 0, profile_mask = 0;
+	glGetIntegerv(GL_CONTEXT_FLAGS, &context_flags);
+	glGetIntegerv(GL_CONTEXT_PROFILE_MASK, &profile_mask);
+	LogInfo("Using OpenGL %d.%d with context options: profile=%s, debug=%s, forward compatible=%s.", GLVersion.major, GLVersion.minor
+	       , (profile_mask & GL_CONTEXT_CORE_PROFILE_BIT) ? "core" : (profile_mask & GL_CONTEXT_COMPATIBILITY_PROFILE_BIT) ? "compatibility" : "unknown"
+	       , (context_flags & GL_CONTEXT_FLAG_DEBUG_BIT) ? "true" : "false"
+	       , (context_flags & GL_CONTEXT_FLAG_FORWARD_COMPATIBLE_BIT) ? "true" : "false"
+	       );
+
+	if (utils::opengl::debug::isSupported())
+	{
+#if DEBUG_LEVEL >= 2
+		glEnable(GL_DEBUG_OUTPUT);
+		glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
+		glDebugMessageCallback(utils::opengl::debug::opengl_error_callback, nullptr);
+#endif
+#if DEBUG_LEVEL == 2
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_FALSE);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_MEDIUM, 0, nullptr, GL_TRUE);
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_HIGH, 0, nullptr, GL_TRUE);
+#elif DEBUG_LEVEL == 3
+		glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, NULL, GL_TRUE);
+#endif
+	}
+	else
+	{
+		LogInfo("DebugCallback is not core in OpenGL %d.%d, and sadly the GL_KHR_DEBUG extension is not available either.", GLVersion.major, GLVersion.minor);
+	}
+
+	glfwSwapInterval(static_cast<std::underlying_type<SwapStrategy>::type>(swap));
+
+	auto& datum_copy = mWindowData[window] = std::make_unique<WindowDatum>(data);
+	datum_copy->fullscreen_width = width;
+	datum_copy->fullscreen_height = height;
+	glfwSetWindowUserPointer(window, datum_copy.get());
+
+	return window;
+}
+
+void WindowManager::DestroyWindow(GLFWwindow* const window)
+{
+	ImGui_ImplOpenGL3_Shutdown();
+	ImGui_ImplGlfw_Shutdown();
+	ImGui::DestroyContext();
+
+	glfwDestroyWindow(window);
+
+	auto const window_datum_iter = mWindowData.find(window);
+	if (window_datum_iter != mWindowData.end())
+		mWindowData.erase(window_datum_iter);
+}
+
+void WindowManager::NewImGuiFrame()
+{
+	ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+}
+
+void WindowManager::RenderImGuiFrame(bool show_gui)
+{
+	ImGui::Render();
+	if (show_gui)
+		ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}
+
+void WindowManager::ToggleFullscreenStatusForWindow(GLFWwindow* const window) noexcept
+{
+	if (window == nullptr)
+		return;
+
+	WindowDatum* const datum = reinterpret_cast<WindowDatum*>(glfwGetWindowUserPointer(window));
+
+	GLFWmonitor* current_monitor = glfwGetWindowMonitor(window);
+	if (current_monitor == nullptr) { // We are currentlu windowed.
+		// Save the position and size, to reuse if going back windowed
+		// later on.
+		glfwGetWindowPos(window, &datum->xpos, &datum->ypos);
+		glfwGetWindowSize(window, &datum->windowed_width, &datum->windowed_height);
+
+		GLFWmonitor* const monitor = glfwGetPrimaryMonitor();
+		GLFWvidmode const* const mode = glfwGetVideoMode(monitor);
+		glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+	} else { // We are currently fullscreen.
+		glfwSetWindowMonitor(window, nullptr, datum->xpos, datum->ypos, datum->windowed_width, datum->windowed_height, 0);
+	}
+}
+
+#pragma once
+
+#include "FPSCamera.h"
+#include "InputHandler.h"
+
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+
+#include <mutex>
+#include <unordered_map>
+
+//! \brief A simple class for creating and interacting with windows, using the
+//!        GLFW library.
+//!
+//! Note: Only one instance of this class can be alive at any given time.
+//!
+//! All windows, which were not manually destroyed using the
+//! WindowManager::DestroyWindow method, will be automatically destroyed along
+//! with the WindowManager object when it gets deleted.
+class WindowManager
+{
+public:
+	enum class SwapStrategy : int {
+		disable_vsync = 0,
+		enable_vsync = 1,
+		late_swap_tearing = -1
+	};
+	struct WindowDatum {
+		InputHandler& input_handler;
+		FPSCameraf&   camera;
+		int           windowed_width, windowed_height;
+		int           fullscreen_width, fullscreen_height;
+		int           xpos, ypos;
+	};
+
+	WindowManager();
+	~WindowManager();
+
+	GLFWwindow* CreateGLFWWindow(std::string const& title, WindowDatum const& data, unsigned int msaa = 1u, bool fullscreen = false, bool resizable = false, SwapStrategy swap = SwapStrategy::enable_vsync);
+	void DestroyWindow(GLFWwindow* const window);
+	void NewImGuiFrame();
+	void RenderImGuiFrame(bool show_gui);
+	void ToggleFullscreenStatusForWindow(GLFWwindow* const window) noexcept;
+
+private:
+	std::unordered_map<GLFWwindow*, std::unique_ptr<WindowDatum>> mWindowData;
+
+	static std::mutex mMutex;
+};
+
+#include "Bonobo.h"
+#include "Log.h"
+
+Bonobo::Bonobo() {
+	LogInfo("Framework initialisation done.");
+}
+
+Bonobo::~Bonobo() {
+	LogInfo("Framework shutting down.");
+}
+
+WindowManager& Bonobo::GetWindowManager() noexcept
+{
+	return windowManager;
+}
+
+Bonobo::LogWrapper::LogWrapper()
+{
+	Log::Init();
+}
+
+Bonobo::LogWrapper::~LogWrapper()
+{
+	Log::Destroy();
+}
+
+Bonobo::LogViewWrapper::LogViewWrapper()
+{
+	Log::View::Init();
+}
+
+Bonobo::LogViewWrapper::~LogViewWrapper()
+{
+	Log::View::Destroy();
+}
+
+#pragma once
+
+#include "core/Log.h"
+#include "core/LogView.h"
+#include "core/WindowManager.hpp"
+
+class Bonobo {
+public:
+	Bonobo();
+	~Bonobo();
+	WindowManager& GetWindowManager() noexcept;
+
+private:
+	struct LogWrapper {
+		LogWrapper();
+		~LogWrapper();
+	} logWrapper;
+	WindowManager windowManager;
+	struct LogViewWrapper {
+		LogViewWrapper();
+		~LogViewWrapper();
+	} logViewWrapper;
+};
